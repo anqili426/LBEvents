@@ -60,4 +60,4 @@ class TestRpc(testtools.TestCase):
             self._fake_create_transport))
         with mock.patch('octavia.common.rpc.get_transport_url') as mock_gtu:
             mock_gtu.return_value = None
-            rpc.init()
+            rpc.init(cfg.CONF)

@@ -25,4 +25,4 @@ def prepare_service(argv=None):
     config.init(argv[1:])
     log.set_defaults()
     config.setup_logging(cfg.CONF)
-    rpc.init()
+    rpc.init(cfg.CONF)

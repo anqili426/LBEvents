@@ -14,53 +14,109 @@ from oslo_config import cfg
 from oslo_log import log as logging
 import oslo_messaging as messaging
 from oslo_messaging.rpc import dispatcher
+from octavia.common import utils
 
 LOG = logging.getLogger(__name__)
 
+CONF = cfg.CONF
 TRANSPORT = None
+NOTIFICATION_TRANSPORT = None
+NOTIFIER = None
 
 
-def init():
-    global TRANSPORT
+def init(conf):
+    global TRANSPORT, NOTIFICATION_TRANSPORT, NOTIFIER
     TRANSPORT = create_transport(get_transport_url())
+    NOTIFICATION_TRANSPORT = messaging.get_notification_transport(conf)
+
+    # get_notification_transport has loaded oslo_messaging_notifications config
+    # group, so we can now check if notifications are actually enabled.
+    if utils.notifications_enabled(conf):
+        json_serializer = messaging.JsonPayloadSerializer()
+        serializer = RequestContextSerializer(json_serializer)
+        NOTIFIER = messaging.Notifier(
+            NOTIFICATION_TRANSPORT, serializer=serializer)
+    else:
+        NOTIFIER = utils.DO_NOTHING
 
 
 def cleanup():
-    global TRANSPORT
+    global TRANSPORT, NOTIFICATION_TRANSPORT, NOTIFIER
     if TRANSPORT is not None:
         TRANSPORT.cleanup()
         TRANSPORT = None
+
+    if NOTIFICATION_TRANSPORT is not None:
+        NOTIFICATION_TRANSPORT.cleanup()
+        NOTIFICATION_TRANSPORT = None
+        NOTIFIER = None
 
 
 def get_transport_url(url_str=None):
     return messaging.TransportURL.parse(cfg.CONF, url_str)
 
 
-def get_client(target, version_cap=None, serializer=None,
+def get_client(target,
+               version_cap=None,
+               serializer=None,
                call_monitor_timeout=None):
     if TRANSPORT is None:
         init()
 
-    return messaging.RPCClient(TRANSPORT,
-                               target,
-                               version_cap=version_cap,
-                               serializer=serializer,
-                               call_monitor_timeout=call_monitor_timeout)
+    return messaging.RPCClient(
+        TRANSPORT,
+        target,
+        version_cap=version_cap,
+        serializer=serializer,
+        call_monitor_timeout=call_monitor_timeout)
 
 
-def get_server(target, endpoints, executor='threading',
+def get_server(target,
+               endpoints,
+               executor='threading',
                access_policy=dispatcher.DefaultRPCAccessPolicy,
                serializer=None):
     if TRANSPORT is None:
         init()
 
-    return messaging.get_rpc_server(TRANSPORT,
-                                    target,
-                                    endpoints,
-                                    executor=executor,
-                                    serializer=serializer,
-                                    access_policy=access_policy)
+    return messaging.get_rpc_server(
+        TRANSPORT,
+        target,
+        endpoints,
+        executor=executor,
+        serializer=serializer,
+        access_policy=access_policy)
 
 
 def create_transport(url):
     return messaging.get_rpc_transport(cfg.CONF, url=url)
+
+
+def get_notifier(service=None, host=None, publisher_id=None):
+    assert NOTIFIER is not None
+    if not publisher_id:
+        publisher_id = "%s.%s" % (service, host or CONF.host)
+    return NOTIFIER.prepare(publisher_id=publisher_id)
+
+
+class RequestContextSerializer(messaging.Serializer):
+    def __init__(self, base):
+        self._base = base
+        super(RequestContextSerializer, self).__init__()
+
+    def serialize_entity(self, context, entity):
+        if not self._base:
+            return entity
+        return self._base.serialize_entity(context, entity)
+
+    def deserialize_entity(self, context, entity):
+        if not self._base:
+            return entity
+        return self._base.deserialize_entity(context, entity)
+
+    def serialize_context(self, context):
+        _context = context.to_dict()
+        return _context
+
+    def deserialize_context(self, context):
+        return karbor.context.RequestContext.from_dict(context)

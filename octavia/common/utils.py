@@ -15,7 +15,6 @@
 #
 # Borrowed from nova code base, more utilities will be added/borrowed as and
 # when needed.
-
 """Utilities and helper functions."""
 
 import base64
@@ -53,8 +52,7 @@ def get_network_driver():
     network_driver = stevedore_driver.DriverManager(
         namespace='octavia.network.drivers',
         name=CONF.controller_worker.network_driver,
-        invoke_on_load=True
-    ).driver
+        invoke_on_load=True).driver
     return network_driver
 
 
@@ -85,9 +83,8 @@ def netmask_to_prefix(netmask):
 def ip_netmask_to_cidr(ip, netmask):
     net = netaddr.IPNetwork("0.0.0.0/0")
     if ip and netmask:
-        net = netaddr.IPNetwork(
-            "{ip}/{netmask}".format(ip=ip, netmask=netmask)
-        )
+        net = netaddr.IPNetwork("{ip}/{netmask}".format(
+            ip=ip, netmask=netmask))
     return "{ip}/{netmask}".format(ip=net.network, netmask=net.prefixlen)
 
 
@@ -104,6 +101,28 @@ def get_six_compatible_server_certs_key_passphrase():
     return base64.urlsafe_b64encode(key)
 
 
+def notifications_enabled(conf):
+    """Check if oslo notifications are enabled."""
+    notifications_driver = set(conf.oslo_messaging_notifications.driver)
+    return notifications_driver and notifications_driver != {'noop'}
+
+
+class DoNothing(str):
+    """Class that literally does nothing.
+
+    We inherit from str in case it's called with json.dumps.
+    """
+
+    def __call__(self, *args, **kwargs):
+        return self
+
+    def __getattr__(self, name):
+        return self
+
+
+DO_NOTHING = DoNothing()
+
+
 class exception_logger(object):
     """Wrap a function and log raised exception
 
@@ -113,6 +132,7 @@ class exception_logger(object):
               any occurred
 
     """
+
     def __init__(self, logger=None):
         self.logger = logger
 
@@ -127,4 +147,5 @@ class exception_logger(object):
             except Exception as e:
                 with excutils.save_and_reraise_exception():
                     self.logger(e)
+
         return call

@@ -35,6 +35,8 @@ from octavia.common import data_models
 from octavia.common import exceptions
 from octavia.common import stats
 from octavia.common import utils
+from octavia.common import notification
+from octavia.common.notification import StartNotification
 import octavia.common.validate as validate
 from octavia.db import api as db_api
 from octavia.db import prepare as db_prepare
@@ -341,6 +343,8 @@ class LoadBalancersController(base.BaseController):
         driver = driver_factory.get_driver(provider)
 
         lock_session = db_api.get_session(autocommit=False)
+
+        context.notification = notification.LoadBalancerCreate(context)
         try:
             if self.repositories.check_quota_met(
                     context.session,
@@ -351,10 +355,11 @@ class LoadBalancersController(base.BaseController):
                     resource=data_models.LoadBalancer._name())
 
             db_lb, db_pools, db_lists = None, None, None
+            
 
             lb_dict = db_prepare.create_load_balancer(load_balancer.to_dict(
-                render_unsets=False
-            ))
+                    render_unsets=False)) 
+
             vip_dict = lb_dict.pop('vip', {})
 
             # Make sure we store the right provider in the DB
@@ -367,8 +372,11 @@ class LoadBalancersController(base.BaseController):
             flavor_dict = self._apply_flavor_to_lb_dict(lock_session, driver,
                                                         lb_dict)
 
-            db_lb = self.repositories.create_load_balancer_and_vip(
-                lock_session, lb_dict, vip_dict)
+            with StartNotification(context, id=lb_dict.get('id'), 
+                                            name=lb_dict.get('name'), 
+                                            provisioning_status=lb_dict.get('provisioning_status'),
+                                            provider=lb_dict.get('provider')):
+                db_lb = self.repositories.create_load_balancer_and_vip(lock_session, lb_dict, vip_dict)
 
             # Pass the flavor dictionary through for the provider drivers
             # This is a "virtual" lb_dict item that includes the expanded
@@ -544,6 +552,7 @@ class LoadBalancersController(base.BaseController):
         """Updates a load balancer."""
         load_balancer = load_balancer.loadbalancer
         context = pecan.request.context.get('octavia_context')
+        context.notification = notification.LoadBalancerUpdate(context)
         db_lb = self._get_db_lb(context.session, id, show_deleted=False)
 
         self._auth_validate_action(context, db_lb.project_id,
@@ -587,8 +596,12 @@ class LoadBalancersController(base.BaseController):
                 db_vip_dict = db_lb_dict.pop('vip')
                 self.repositories.vip.update(lock_session, id, **db_vip_dict)
             if db_lb_dict:
-                self.repositories.load_balancer.update(lock_session, id,
-                                                       **db_lb_dict)
+                with StartNotification(context, id=db_lb_dict.get('id'), 
+                                                name=db_lb_dict.get('name'), 
+                                                provisioning_status=db_lb_dict.get('provisioning_status'),
+                                                provider=driver.name): 
+                    self.repositories.load_balancer.update(lock_session, id,
+                                                            **db_lb_dict) 
 
         # Force SQL alchemy to query the DB, otherwise we get inconsistent
         # results
@@ -601,6 +614,7 @@ class LoadBalancersController(base.BaseController):
     def delete(self, id, cascade=False):
         """Deletes a load balancer."""
         context = pecan.request.context.get('octavia_context')
+        context.notification = notification.LoadBalancerDelete(context)
         cascade = strutils.bool_from_string(cascade)
         db_lb = self._get_db_lb(context.session, id, show_deleted=False)
 
@@ -623,7 +637,10 @@ class LoadBalancersController(base.BaseController):
                      id, driver.name)
             provider_loadbalancer = (
                 driver_utils.db_loadbalancer_to_provider_loadbalancer(db_lb))
-            driver_utils.call_provider(driver.name, driver.loadbalancer_delete,
+            with StartNotification(context, id=db_lb.id, 
+                                            name=db_lb.name, 
+                                            provisioning_status=db_lb.provisioning_status): 
+                driver_utils.call_provider(driver.name, driver.loadbalancer_delete,
                                        provider_loadbalancer, cascade)
 
     @pecan.expose()
