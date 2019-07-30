@@ -29,15 +29,11 @@ def init(conf):
     TRANSPORT = create_transport(get_transport_url())
     NOTIFICATION_TRANSPORT = messaging.get_notification_transport(conf)
 
-    # get_notification_transport has loaded oslo_messaging_notifications config
-    # group, so we can now check if notifications are actually enabled.
-    if utils.notifications_enabled(conf):
-        json_serializer = messaging.JsonPayloadSerializer()
-        serializer = RequestContextSerializer(json_serializer)
-        NOTIFIER = messaging.Notifier(
-            NOTIFICATION_TRANSPORT, serializer=serializer)
-    else:
-        NOTIFIER = utils.DO_NOTHING
+    json_serializer = messaging.JsonPayloadSerializer()
+    serializer = RequestContextSerializer(json_serializer)
+    NOTIFIER = messaging.Notifier(
+            NOTIFICATION_TRANSPORT, driver='messaging', serializer=serializer)
+
 
 
 def cleanup():

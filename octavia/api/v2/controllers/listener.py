@@ -31,6 +31,8 @@ from octavia.common import constants
 from octavia.common import data_models
 from octavia.common import exceptions
 from octavia.common import stats
+from octavia.common import notification
+from octavia.common.notification import StartNotification
 from octavia.db import api as db_api
 from octavia.db import prepare as db_prepare
 from octavia.i18n import _
@@ -295,23 +297,29 @@ class ListenersController(base.BaseController):
             db_listener = self._validate_create_listener(
                 lock_session, listener_dict)
 
-            # Prepare the data for the driver data model
-            provider_listener = (
-                driver_utils.db_listener_to_provider_listener(db_listener))
+            context.notification = notification.LoadBalancerUpdate(context)
+            lb_repo = self.repositories.load_balancer
+            db_lb = lb_repo.get(lock_session, id=load_balancer_id)
+            with notification.sendLBStartNotification(context, db_lb.to_dict()):
+                context.notification = notification.ListenerCreate(context)
+                with notification.sendListenerStartNotification(context, listener_dict):
+                    # Prepare the data for the driver data model
+                    provider_listener = (
+                        driver_utils.db_listener_to_provider_listener(db_listener))
 
-            # re-inject the sni container references lost due to SNI
-            # being a separate table in the DB
-            if listener.sni_container_refs != wtypes.Unset:
-                provider_listener.sni_container_refs = (
-                    listener.sni_container_refs)
+                    # re-inject the sni container references lost due to SNI
+                    # being a separate table in the DB
+                    if listener.sni_container_refs != wtypes.Unset:
+                        provider_listener.sni_container_refs = (
+                            listener.sni_container_refs)
 
-            # Dispatch to the driver
-            LOG.info("Sending create Listener %s to provider %s",
-                     db_listener.id, driver.name)
-            driver_utils.call_provider(
-                driver.name, driver.listener_create, provider_listener)
+                    # Dispatch to the driver
+                    LOG.info("Sending create Listener %s to provider %s",
+                            db_listener.id, driver.name)
+                    driver_utils.call_provider(
+                        driver.name, driver.listener_create, provider_listener)
 
-            lock_session.commit()
+                    lock_session.commit()
         except Exception:
             with excutils.save_and_reraise_exception():
                 lock_session.rollback()
@@ -527,12 +535,18 @@ class ListenersController(base.BaseController):
                 lock_session, load_balancer_id,
                 id=id, listener_status=constants.PENDING_DELETE)
 
-            LOG.info("Sending delete Listener %s to provider %s", id,
-                     driver.name)
-            provider_listener = (
-                driver_utils.db_listener_to_provider_listener(db_listener))
-            driver_utils.call_provider(driver.name, driver.listener_delete,
-                                       provider_listener)
+            context.notification = notification.LoadBalancerUpdate(context)
+            lb_repo = self.repositories.load_balancer
+            db_lb = lb_repo.get(lock_session, id=load_balancer_id)
+            with notification.sendLBStartNotification(context, db_lb.to_dict()):
+                context.notification = notification.ListenerDelete(context)
+                with notification.sendListenerStartNotification(context, db_listener.to_dict()):
+                    LOG.info("Sending delete Listener %s to provider %s", id,
+                            driver.name)
+                    provider_listener = (
+                        driver_utils.db_listener_to_provider_listener(db_listener))
+                    driver_utils.call_provider(driver.name, driver.listener_delete,
+                                            provider_listener)
 
     @pecan.expose()
     def _lookup(self, id, *remainder):

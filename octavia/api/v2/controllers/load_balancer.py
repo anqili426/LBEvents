@@ -372,54 +372,53 @@ class LoadBalancersController(base.BaseController):
             flavor_dict = self._apply_flavor_to_lb_dict(lock_session, driver,
                                                         lb_dict)
 
-            with StartNotification(context, id=lb_dict.get('id'), 
-                                            name=lb_dict.get('name'), 
-                                            provisioning_status=lb_dict.get('provisioning_status'),
-                                            provider=lb_dict.get('provider')):
+            with notification.sendLBStartNotification(context, lb_dict):
                 db_lb = self.repositories.create_load_balancer_and_vip(lock_session, lb_dict, vip_dict)
+                
 
-            # Pass the flavor dictionary through for the provider drivers
-            # This is a "virtual" lb_dict item that includes the expanded
-            # flavor dict instead of just the flavor_id we store in the DB.
-            lb_dict['flavor'] = flavor_dict
+                # Pass the flavor dictionary through for the provider drivers
+                # This is a "virtual" lb_dict item that includes the expanded
+                # flavor dict instead of just the flavor_id we store in the DB.
+                lb_dict['flavor'] = flavor_dict
 
-            # See if the provider driver wants to create the VIP port
-            octavia_owned = False
-            try:
-                provider_vip_dict = driver_utils.vip_dict_to_provider_dict(
+                # See if the provider driver wants to create the VIP port
+                octavia_owned = False
+                try:
+                    provider_vip_dict = driver_utils.vip_dict_to_provider_dict(
                     vip_dict)
-                vip_dict = driver_utils.call_provider(
-                    driver.name, driver.create_vip_port, db_lb.id,
-                    db_lb.project_id, provider_vip_dict)
-                vip = driver_utils.provider_vip_dict_to_vip_obj(vip_dict)
-            except exceptions.ProviderNotImplementedError:
-                # create vip port if not exist, driver didn't want to create
-                # the VIP port
-                vip = self._create_vip_port_if_not_exist(db_lb)
-                LOG.info('Created VIP port %s for provider %s.',
+                    vip_dict = driver_utils.call_provider(
+                        driver.name, driver.create_vip_port, db_lb.id,
+                        db_lb.project_id, provider_vip_dict)
+                    vip = driver_utils.provider_vip_dict_to_vip_obj(vip_dict)
+                except exceptions.ProviderNotImplementedError:
+                    # create vip port if not exist, driver didn't want to create
+                    # the VIP port
+                    vip = self._create_vip_port_if_not_exist(db_lb)
+                    LOG.info('Created VIP port %s for provider %s.',
                          vip.port_id, driver.name)
-                # If a port_id wasn't passed in and we made it this far
-                # we created the VIP
-                if 'port_id' not in vip_dict or not vip_dict['port_id']:
-                    octavia_owned = True
+                    # If a port_id wasn't passed in and we made it this far
+                    # we created the VIP
+                    if 'port_id' not in vip_dict or not vip_dict['port_id']:
+                        octavia_owned = True
 
-            self.repositories.vip.update(
-                lock_session, db_lb.id, ip_address=vip.ip_address,
-                port_id=vip.port_id, network_id=vip.network_id,
-                subnet_id=vip.subnet_id, octavia_owned=octavia_owned)
+                self.repositories.vip.update(
+                    lock_session, db_lb.id, ip_address=vip.ip_address,
+                    port_id=vip.port_id, network_id=vip.network_id,
+                    subnet_id=vip.subnet_id, octavia_owned=octavia_owned)
 
-            if listeners or pools:
-                db_pools, db_lists = self._graph_create(
-                    context.session, lock_session, db_lb, listeners, pools)
+                if listeners or pools:
+                    db_pools, db_lists = self._graph_create(
+                        context.session, lock_session, db_lb, listeners, pools)
 
-            # Prepare the data for the driver data model
-            driver_lb_dict = driver_utils.lb_dict_to_provider_dict(
-                lb_dict, vip, db_pools, db_lists)
+                # Prepare the data for the driver data model
+                driver_lb_dict = driver_utils.lb_dict_to_provider_dict(
+                    lb_dict, vip, db_pools, db_lists)
 
-            # Dispatch to the driver
-            LOG.info("Sending create Load Balancer %s to provider %s",
-                     db_lb.id, driver.name)
-            driver_utils.call_provider(
+                # Dispatch to the driver
+                LOG.info("Sending create Load Balancer %s to provider %s",
+                        db_lb.id, driver.name)
+
+                driver_utils.call_provider(
                 driver.name, driver.loadbalancer_create,
                 driver_dm.LoadBalancer.from_dict(driver_lb_dict))
 
@@ -434,7 +433,7 @@ class LoadBalancersController(base.BaseController):
         db_lb = self._get_db_lb(context.session, db_lb.id)
 
         result = self._convert_db_to_type(
-            db_lb, lb_types.LoadBalancerFullResponse)
+                db_lb, lb_types.LoadBalancerFullResponse)
         return lb_types.LoadBalancerFullRootResponse(loadbalancer=result)
 
     def _graph_create(self, session, lock_session, db_lb, listeners, pools):
@@ -596,10 +595,7 @@ class LoadBalancersController(base.BaseController):
                 db_vip_dict = db_lb_dict.pop('vip')
                 self.repositories.vip.update(lock_session, id, **db_vip_dict)
             if db_lb_dict:
-                with StartNotification(context, id=db_lb_dict.get('id'), 
-                                                name=db_lb_dict.get('name'), 
-                                                provisioning_status=db_lb_dict.get('provisioning_status'),
-                                                provider=driver.name): 
+                with notification.sendLBStartNotification(context, lb_dict):
                     self.repositories.load_balancer.update(lock_session, id,
                                                             **db_lb_dict) 
 
@@ -637,9 +633,7 @@ class LoadBalancersController(base.BaseController):
                      id, driver.name)
             provider_loadbalancer = (
                 driver_utils.db_loadbalancer_to_provider_loadbalancer(db_lb))
-            with StartNotification(context, id=db_lb.id, 
-                                            name=db_lb.name, 
-                                            provisioning_status=db_lb.provisioning_status): 
+            with notification.sendLBStartNotification(context, db_lb.to_dict()):
                 driver_utils.call_provider(driver.name, driver.loadbalancer_delete,
                                        provider_loadbalancer, cascade)
 

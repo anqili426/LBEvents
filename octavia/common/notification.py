@@ -45,12 +45,20 @@ class EndNotification(object):
         else:
             self._notifier.notify_end()
 
+class StartNotification(object):
+    def __init__(self, context, **kwargs):
+        self.context = context
+        self.context.notification.payload.update(kwargs)
 
-class StartNotification(EndNotification):
     def __enter__(self):
         self.context.notification.notify_start()
-        return super(StartNotification, self).__enter__()
+        return self.context.notification
 
+    def __exit__(self, etype, value, tb):
+        if etype:
+            message = str(value)
+            exception = traceback.format_exception(etype, value, tb)
+            self._notifier.notify_exc_info(message, exception)
 
 class OctaviaAPINotification(object):
     event_type_format = 'octavia.%s.%s'
@@ -96,7 +104,6 @@ class OctaviaAPINotification(object):
 
     def __init__(self, context, **kwargs):
         self.context = context
-        self.needs_end_notification = True
 
         self.payload = {}
         self.payload.update({'tenant_id': context.tenant})
@@ -148,8 +155,7 @@ class OctaviaAPINotification(object):
                      self.optional_start_traits(), **kwargs)
 
     def notify_end(self, **kwargs):
-        if self.needs_end_notification:
-            self._notify('end', self.required_end_traits(),
+        self._notify('end', self.required_end_traits(),
                          self.optional_end_traits(), **kwargs)
 
     def notify_exc_info(self, message, exception):
@@ -161,7 +167,7 @@ class OctaviaAPINotification(object):
 class LoadBalancerCreate(OctaviaAPINotification):
     @abc.abstractmethod
     def event_type(self):
-        return 'loadbalancer_create'
+        return 'loadbalancer.create'
 
     @abc.abstractmethod
     def required_start_traits(self):
@@ -174,7 +180,7 @@ class LoadBalancerCreate(OctaviaAPINotification):
 class LoadBalancerDelete(OctaviaAPINotification):
     @abc.abstractmethod
     def event_type(self):
-        return 'loadbalancer_delete'
+        return 'loadbalancer.delete'
 
     @abc.abstractmethod
     def required_start_traits(self):
@@ -187,7 +193,7 @@ class LoadBalancerDelete(OctaviaAPINotification):
 class LoadBalancerUpdate(OctaviaAPINotification):
     @abc.abstractmethod
     def event_type(self):
-        return 'loadbalancer_update'
+        return 'loadbalancer.update'
 
     @abc.abstractmethod
     def required_start_traits(self):
@@ -195,3 +201,168 @@ class LoadBalancerUpdate(OctaviaAPINotification):
 
     def required_end_traits(self):
         return ['id', 'name', 'provisioning_status', 'provider']
+
+
+class ListenerCreate(OctaviaAPINotification):
+    @abc.abstractmethod
+    def event_type(self):
+        return 'loadbalancer_listener.create'
+
+    @abc.abstractmethod
+    def required_start_traits(self):
+        return ['id', 'name', 'provisioning_status', 'load_balancer', 'protocol', 'protocol_port', 'connection_limit']
+
+    def required_end_traits(self):
+        return ['id', 'name', 'provisioning_status', 'load_balancer', 'protocol', 'protocol_port', 'connection_limit']
+
+class ListenerUpdate(OctaviaAPINotification):
+    @abc.abstractmethod
+    def event_type(self):
+        return 'loadbalancer_listener.update'
+
+    @abc.abstractmethod
+    def required_start_traits(self):
+        return ['id', 'name', 'provisioning_status', 'load_balancer', 'protocol', 'protocol_port', 'connection_limit']
+
+    def required_end_traits(self):
+        return ['id', 'name', 'provisioning_status', 'load_balancer', 'protocol', 'protocol_port', 'connection_limit']
+
+class ListenerDelete(OctaviaAPINotification):
+    @abc.abstractmethod
+    def event_type(self):
+        return 'loadbalancer_listener.delete'
+
+    @abc.abstractmethod
+    def required_start_traits(self):
+        return ['id', 'name', 'provisioning_status', 'load_balancer', 'protocol', 'protocol_port', 'connection_limit']
+
+    def required_end_traits(self):
+        return ['id', 'name', 'provisioning_status', 'load_balancer', 'protocol', 'protocol_port', 'connection_limit']
+    
+
+class PoolCreate(OctaviaAPINotification):
+    @abc.abstractmethod
+    def event_type(self):
+        return 'loadbalancer_pool.create'
+
+    @abc.abstractmethod
+    def required_start_traits(self):
+        return ['id', 'name', 'provisioning_status', 'load_balancer', 'listeners', 'lb_algorithm']
+
+    def required_end_traits(self):
+        return ['id', 'name', 'provisioning_status', 'load_balancer', 'listeners', 'lb_algorithm']
+
+
+class PoolDelete(OctaviaAPINotification):
+    @abc.abstractmethod
+    def event_type(self):
+        return 'loadbalancer_pool.delete'
+
+    @abc.abstractmethod
+    def required_start_traits(self):
+        return ['id', 'name', 'provisioning_status', 'load_balancer', 'listeners', 'lb_algorithm']
+
+    def required_end_traits(self):
+        return ['id', 'name', 'provisioning_status', 'load_balancer', 'listeners', 'lb_algorithm']
+
+
+class MemberCreate(OctaviaAPINotification):
+    @abc.abstractmethod
+    def event_type(self):
+        return 'loadbalancer_member.create'
+
+    @abc.abstractmethod
+    def required_start_traits(self):
+        return ['id', 'name', 'provisioning_status', 'provider']
+
+    def required_end_traits(self):
+        return ['id', 'name', 'provisioning_status', 'provider']
+
+
+class MemberDelete(OctaviaAPINotification):
+    @abc.abstractmethod
+    def event_type(self):
+        return 'loadbalancer_member.delete'
+
+    @abc.abstractmethod
+    def required_start_traits(self):
+        return ['id', 'name', 'provisioning_status', 'provider']
+
+    def required_end_traits(self):
+        return ['id', 'name', 'provisioning_status', 'provider']
+
+
+class MonitorCreate(OctaviaAPINotification):
+    @abc.abstractmethod
+    def event_type(self):
+        return 'loadbalancer_monitor.create'
+
+    @abc.abstractmethod
+    def required_start_traits(self):
+        return ['id', 'name', 'provisioning_status', 'provider']
+
+    def required_end_traits(self):
+        return ['id', 'name', 'provisioning_status', 'provider']
+
+
+class MonitorDelete(OctaviaAPINotification):
+    @abc.abstractmethod
+    def event_type(self):
+        return 'loadbalancer_monitor.delete'
+
+    @abc.abstractmethod
+    def required_start_traits(self):
+        return ['id', 'name', 'provisioning_status', 'provider']
+
+    def required_end_traits(self):
+        return ['id', 'name', 'provisioning_status', 'provider']
+
+def sendLBStartNotification(context, lb_data, provisioning_status=None):
+    return StartNotification(context, id=lb_data.get('id'), 
+                                      name=lb_data.get('name'), 
+                                      provisioning_status=(provisioning_status if provisioning_status else lb_data.get('provisioning_status')),
+                                      provider=lb_data.get('provider'))
+
+def sendLBEndNotification(context, lb_data, provisioning_status=None):
+    return EndNotification(context, id=lb_data.get('id'), 
+                                      name=lb_data.get('name'), 
+                                      provisioning_status=(provisioning_status if provisioning_status else lb_data.get('provisioning_status')),
+                                      provider=lb_data.get('provider'))
+
+def sendListenerStartNotification(context, listener_data, provisioning_status=None):
+    return StartNotification(context, id=listener_data.get('id'),
+                                      name=listener_data.get('name'),
+                                      provisioning_status=(provisioning_status if provisioning_status else listener_data.get('provisioning_status')),
+                                      load_balancer=listener_data.get('load_balancer_id'),
+                                      protocol=listener_data.get('protocol'),
+                                      protocol_port=listener_data.get('protocol_port'),
+                                      connection_limit=listener_data.get('connection_limit'))
+                            
+def sendListenerEndNotification(context, listener_data, provisioning_status=None):
+    return EndNotification(context, id=listener_data.get('id'),
+                                      name=listener_data.get('name'),
+                                      provisioning_status=(provisioning_status if provisioning_status else listener_data.get('provisioning_status')),
+                                      load_balancer=listener_data.get('load_balancer_id'),
+                                      protocol=listener_data.get('protocol'),
+                                      protocol_port=listener_data.get('protocol_port'),
+                                      connection_limit=listener_data.get('connection_limit'))
+
+def sendPoolStartNotification(context, pool_data, provisioning_status=None):
+    return  StartNotification(context, id=pool_data.get('id'),
+                                    name=pool_data.get('name'),
+                                    provisioning_status=(provisioning_status if provisioning_status else pool_data.get('provisioning_status')),
+                                    load_balancer=pool_data.get('load_balancer_id'),
+                                    listeners=pool_data.get('listeners'),
+                                    lb_algorithm=pool_data.get('lb_algorithm'))
+
+def sendPoolEndNotification(context, pool_data, provisioning_status=None):
+    return  EndNotification(context, id=pool_data.get('id'),
+                                    name=pool_data.get('name'),
+                                    provisioning_status=(provisioning_status if provisioning_status else pool_data.get('provisioning_status')),
+                                    load_balancer=pool_data.get('load_balancer_id'),
+                                    listeners=pool_data.get('listeners'),
+                                    lb_algorithm=pool_data.get('lb_algorithm'))
+
+
+
+

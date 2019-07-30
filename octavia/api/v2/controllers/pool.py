@@ -250,6 +250,24 @@ class PoolsController(base.BaseController):
             db_pool = self._validate_create_pool(
                 lock_session, pool_dict, listener_id)
 
+            # context.notification = notification.LoadBalancerUpdate(context)
+            # lb_repo = self.repositories.load_balancer
+            # db_lb = lb_repo.get(lock_session, id=load_balancer_id)
+            # with StartNotification(context, id=db_lb.id, 
+            #                                 name=db_lb.name, 
+            #                                 provisioning_status=db_lb.provisioning_status,
+            #                                 provider=db_lb.provider):
+            #     context.notification = notification.ListenerUpdate(context)
+            #     listener_repo = self.repositories.listeners 
+            #     db_listener = lb_repo.get(lock_session, id=listener_id)
+            #     with StartNotification(context, id=listener_dict.get('id'),
+            #                                     name=listener_dict.get('name'),
+            #                                     provisioning_status=listener_dict.get('provisioning_status'),
+            #                                     load_balancer=listener_dict.get('load_balancer_id'),
+            #                                     protocol=listener_dict.get('protocol'),
+            #                                     protocol_port=listener_dict.get('protocol_port'),
+            #                                     connection_limit=listener_dict.get('connection_limit')):
+
             # Prepare the data for the driver data model
             provider_pool = (
                 driver_utils.db_pool_to_provider_pool(db_pool))

@@ -42,7 +42,7 @@ class LoadBalancerFlows(object):
         self.pool_flows = pool_flows.PoolFlows()
         self.member_flows = member_flows.MemberFlows()
 
-    def get_create_load_balancer_flow(self, topology, listeners=None):
+    def get_create_load_balancer_flow(self, context, topology, listeners=None):
         """Creates a conditional graph flow that allocates a loadbalancer to
 
         two spare amphorae.
@@ -81,11 +81,11 @@ class LoadBalancerFlows(object):
             LOG.error("Unknown topology: %s.  Unable to build load balancer.",
                       topology)
             raise exceptions.InvalidTopology(topology=topology)
-
+      
         post_amp_prefix = constants.POST_LB_AMP_ASSOCIATION_SUBFLOW
         lb_create_flow.add(
-            self.get_post_lb_amp_association_flow(
-                post_amp_prefix, topology, mark_active=(not listeners)))
+                self.get_post_lb_amp_association_flow(
+                    post_amp_prefix, topology, mark_active=(not listeners)))
 
         if listeners:
             lb_create_flow.add(*self._create_listeners_flow())
@@ -177,12 +177,12 @@ class LoadBalancerFlows(object):
         :return: Post amphorae association subflow
         """
 
+
         # Note: If any task in this flow failed, the created amphorae will be
         #  left ''incorrectly'' allocated to the loadbalancer. Likely,
         # the get_new_LB_networking_subflow is the most prune to failure
         # shall deallocate the amphora from its loadbalancer and put it in a
         # READY state.
-
         sf_name = prefix + '-' + constants.POST_LB_AMP_ASSOCIATION_SUBFLOW
         post_create_LB_flow = linear_flow.Flow(sf_name)
         post_create_LB_flow.add(

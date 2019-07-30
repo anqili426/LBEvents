@@ -30,6 +30,9 @@ from octavia.common import data_models
 import octavia.common.tls_utils.cert_parser as cert_parser
 from octavia.common import utils
 from octavia.common import validate
+from octavia.common import context
+from octavia.common import notification
+from octavia.common.notification import EndNotification
 from octavia.controller.worker import task_utils as task_utilities
 from octavia.db import api as db_apis
 from octavia.db import repositories as repo
@@ -250,8 +253,13 @@ class DeleteListenerInDB(BaseDatabaseTask):
         :param listener: The listener to delete
         :returns: None
         """
+
         LOG.debug("Delete in DB for listener id: %s", listener.id)
-        self.listener_repo.delete(db_apis.get_session(), id=listener.id)
+
+        ctx = context.Context(project_id=listener.project_id)
+        ctx.notification = notification.ListenerDelete(ctx)
+        with notification.sendListenerEndNotification(ctx, listener.to_dict(), constants.DELETED):
+            self.listener_repo.delete(db_apis.get_session(), id=listener.id)
 
     def revert(self, listener, *args, **kwargs):
         """Mark the listener ERROR since the listener didn't delete
@@ -278,7 +286,11 @@ class DeletePoolInDB(BaseDatabaseTask):
         """
 
         LOG.debug("Delete in DB for pool id: %s ", pool.id)
-        self.pool_repo.delete(db_apis.get_session(), id=pool.id)
+
+        ctx = context.Context(project_id=pool.project_id)
+        ctx.notification = notification.PoolDelete(ctx)
+        with notification.sendPoolEndNotification(ctx, pool.to_dict(), constants.DELETED):
+            self.pool_repo.delete(db_apis.get_session(), id=pool.id)
 
     def revert(self, pool, *args, **kwargs):
         """Mark the pool ERROR since the delete couldn't happen
@@ -974,9 +986,19 @@ class MarkLBActiveInDB(BaseDatabaseTask):
 
         LOG.info("Mark ACTIVE in DB for load balancer id: %s",
                  loadbalancer.id)
-        self.loadbalancer_repo.update(db_apis.get_session(),
-                                      loadbalancer.id,
-                                      provisioning_status=constants.ACTIVE)
+
+        ctx = context.Context(project_id=loadbalancer.project_id)
+
+        current_state = loadbalancer.provisioning_status
+        if current_state == constants.PENDING_CREATE:
+            ctx.notification = notification.LoadBalancerCreate(ctx)
+        elif current_state == constants.PENDING_UPDATE:
+            ctx.notification = notification.LoadBalancerUpdate(ctx)
+
+        with notification.sendLBEndNotification(ctx, loadbalancer.to_dict(), constants.ACTIVE):
+            self.loadbalancer_repo.update(db_apis.get_session(),
+                                            loadbalancer.id,
+                                            provisioning_status=constants.ACTIVE)
 
     def _mark_listener_status(self, listener, status):
         self.listener_repo.update(db_apis.get_session(),
@@ -1113,9 +1135,14 @@ class MarkLBDeletedInDB(BaseDatabaseTask):
 
         LOG.debug("Mark DELETED in DB for load balancer id: %s",
                   loadbalancer.id)
-        self.loadbalancer_repo.update(db_apis.get_session(),
-                                      loadbalancer.id,
-                                      provisioning_status=constants.DELETED)
+
+        ctx = context.Context(project_id=loadbalancer.project_id)
+        ctx.notification = notification.LoadBalancerDelete(ctx)
+
+        with notification.sendLBEndNotification(ctx, loadbalancer.to_dict(), constants.DELETED):
+            self.loadbalancer_repo.update(db_apis.get_session(),
+                                            loadbalancer.id,
+                                            provisioning_status=constants.DELETED)
 
     def revert(self, loadbalancer, *args, **kwargs):
         """Mark the load balancer as broken and ready to be cleaned up.
@@ -1178,12 +1205,24 @@ class MarkLBAndListenersActiveInDB(BaseDatabaseTask):
         LOG.debug("Mark ACTIVE in DB for load balancer id: %s "
                   "and listener ids: %s", loadbalancer.id,
                   ', '.join([l.id for l in listeners]))
-        self.loadbalancer_repo.update(db_apis.get_session(),
-                                      loadbalancer.id,
-                                      provisioning_status=constants.ACTIVE)
+
+        ctx = context.Context(project_id=loadbalancer.project_id)
+        ctx.notification = notification.LoadBalancerUpdate(ctx)
+        with notification.sendLBEndNotification(ctx, loadbalancer.to_dict(), constants.ACTIVE):
+            self.loadbalancer_repo.update(db_apis.get_session(),
+                                        loadbalancer.id,
+                                        provisioning_status=constants.ACTIVE)
         for listener in listeners:
-            self.listener_repo.update(db_apis.get_session(), listener.id,
-                                      provisioning_status=constants.ACTIVE)
+            ctx = context.Context(project_id=listener.project_id)
+            current_state = listener.provisioning_status
+            if current_state == constants.PENDING_CREATE:
+                ctx.notification = notification.ListenerCreate(ctx)
+            elif current_state == constants.PENDING_UPDATE:
+                ctx.notification = notification.ListenerUpdate(ctx)
+            
+            with notification.sendListenerEndNotification(ctx, listener.to_dict(), constants.ACTIVE):
+                self.listener_repo.update(db_apis.get_session(), listener.id,
+                                        provisioning_status=constants.ACTIVE)
 
     def revert(self, loadbalancer, listeners, *args, **kwargs):
         """Mark the load balancer and listeners as broken.
@@ -2216,9 +2255,13 @@ class MarkPoolActiveInDB(BaseDatabaseTask):
 
         LOG.debug("Mark ACTIVE in DB for pool id: %s",
                   pool.id)
-        self.pool_repo.update(db_apis.get_session(),
-                              pool.id,
-                              provisioning_status=constants.ACTIVE)
+
+        ctx = context.Context(project_id=pool.project_id)
+        ctx.notification = notification.PoolCreate(ctx)
+        with notification.sendPoolEndNotification(ctx, pool.to_dict(), constants.ACTIVE):
+            self.pool_repo.update(db_apis.get_session(),
+                                    pool.id,
+                                    provisioning_status=constants.ACTIVE)
 
     def revert(self, pool, *args, **kwargs):
         """Mark the pool as broken
