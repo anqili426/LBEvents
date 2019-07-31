@@ -165,10 +165,14 @@ class DeleteHealthMonitorInDB(BaseDatabaseTask):
         :returns: None
         """
 
+        
         LOG.debug("DB delete health monitor: %s ", health_mon.id)
         try:
-            self.health_mon_repo.delete(db_apis.get_session(),
-                                        id=health_mon.id)
+            ctx = context.Context(project_id=health_mon.project_id)
+            ctx.notification = notification.MonitorDelete(ctx)
+            with notification.send_monitor_end_notification(ctx, health_mon.to_dict(), constants.DELETED):
+                self.health_mon_repo.delete(db_apis.get_session(),
+                                            id=health_mon.id)
         except exc.NoResultFound:
             # ignore if the HealthMonitor was not found
             pass
@@ -225,7 +229,10 @@ class DeleteMemberInDB(BaseDatabaseTask):
         """
 
         LOG.debug("DB delete member for id: %s ", member.id)
-        self.member_repo.delete(db_apis.get_session(), id=member.id)
+        ctx = context.Context(project_id=member.project_id)
+        ctx.notification = notification.MemberDelete(ctx)
+        with notification.send_member_end_notification(ctx, member.to_dict(), constants.DELETED):
+            self.member_repo.delete(db_apis.get_session(), id=member.id)
 
     def revert(self, member, *args, **kwargs):
         """Mark the member ERROR since the delete couldn't happen
@@ -258,7 +265,7 @@ class DeleteListenerInDB(BaseDatabaseTask):
 
         ctx = context.Context(project_id=listener.project_id)
         ctx.notification = notification.ListenerDelete(ctx)
-        with notification.sendListenerEndNotification(ctx, listener.to_dict(), constants.DELETED):
+        with notification.send_listener_end_notification(ctx, listener.to_dict(), constants.DELETED):
             self.listener_repo.delete(db_apis.get_session(), id=listener.id)
 
     def revert(self, listener, *args, **kwargs):
@@ -289,7 +296,8 @@ class DeletePoolInDB(BaseDatabaseTask):
 
         ctx = context.Context(project_id=pool.project_id)
         ctx.notification = notification.PoolDelete(ctx)
-        with notification.sendPoolEndNotification(ctx, pool.to_dict(), constants.DELETED):
+        listeners = [l.id for l in pool.listeners]
+        with notification.send_pool_end_notification(ctx, pool.to_dict(), constants.DELETED, listeners):
             self.pool_repo.delete(db_apis.get_session(), id=pool.id)
 
     def revert(self, pool, *args, **kwargs):
@@ -995,7 +1003,7 @@ class MarkLBActiveInDB(BaseDatabaseTask):
         elif current_state == constants.PENDING_UPDATE:
             ctx.notification = notification.LoadBalancerUpdate(ctx)
 
-        with notification.sendLBEndNotification(ctx, loadbalancer.to_dict(), constants.ACTIVE):
+        with notification.send_lb_end_notification(ctx, loadbalancer.to_dict(), constants.ACTIVE):
             self.loadbalancer_repo.update(db_apis.get_session(),
                                             loadbalancer.id,
                                             provisioning_status=constants.ACTIVE)
@@ -1139,7 +1147,7 @@ class MarkLBDeletedInDB(BaseDatabaseTask):
         ctx = context.Context(project_id=loadbalancer.project_id)
         ctx.notification = notification.LoadBalancerDelete(ctx)
 
-        with notification.sendLBEndNotification(ctx, loadbalancer.to_dict(), constants.DELETED):
+        with notification.send_lb_end_notification(ctx, loadbalancer.to_dict(), constants.DELETED):
             self.loadbalancer_repo.update(db_apis.get_session(),
                                             loadbalancer.id,
                                             provisioning_status=constants.DELETED)
@@ -1208,7 +1216,7 @@ class MarkLBAndListenersActiveInDB(BaseDatabaseTask):
 
         ctx = context.Context(project_id=loadbalancer.project_id)
         ctx.notification = notification.LoadBalancerUpdate(ctx)
-        with notification.sendLBEndNotification(ctx, loadbalancer.to_dict(), constants.ACTIVE):
+        with notification.send_lb_end_notification(ctx, loadbalancer.to_dict(), constants.ACTIVE):
             self.loadbalancer_repo.update(db_apis.get_session(),
                                         loadbalancer.id,
                                         provisioning_status=constants.ACTIVE)
@@ -1220,7 +1228,7 @@ class MarkLBAndListenersActiveInDB(BaseDatabaseTask):
             elif current_state == constants.PENDING_UPDATE:
                 ctx.notification = notification.ListenerUpdate(ctx)
             
-            with notification.sendListenerEndNotification(ctx, listener.to_dict(), constants.ACTIVE):
+            with notification.send_listener_end_notification(ctx, listener.to_dict(), constants.ACTIVE):
                 self.listener_repo.update(db_apis.get_session(), listener.id,
                                         provisioning_status=constants.ACTIVE)
 
@@ -1750,12 +1758,21 @@ class MarkHealthMonitorActiveInDB(BaseDatabaseTask):
         LOG.debug("Mark ACTIVE in DB for health monitor id: %s",
                   health_mon.id)
 
-        op_status = (constants.ONLINE if health_mon.enabled
-                     else constants.OFFLINE)
-        self.health_mon_repo.update(db_apis.get_session(),
-                                    health_mon.id,
-                                    provisioning_status=constants.ACTIVE,
-                                    operating_status=op_status)
+        ctx = context.Context(project_id=health_mon.project_id)
+
+        current_state = health_mon.provisioning_status
+        if current_state == constants.PENDING_CREATE:
+            ctx.notification = notification.MonitorCreate(ctx)
+        elif current_state == constants.PENDING_UPDATE:
+            ctx.notification = notification.MonitorUpdate(ctx)
+
+        with notification.send_monitor_end_notification(ctx, health_mon.to_dict()):
+            op_status = (constants.ONLINE if health_mon.enabled
+                        else constants.OFFLINE)
+            self.health_mon_repo.update(db_apis.get_session(),
+                                        health_mon.id,
+                                        provisioning_status=constants.ACTIVE,
+                                        operating_status=op_status)
 
     def revert(self, health_mon, *args, **kwargs):
         """Mark the health monitor as broken
@@ -2133,9 +2150,17 @@ class MarkMemberActiveInDB(BaseDatabaseTask):
         """
 
         LOG.debug("Mark ACTIVE in DB for member id: %s", member.id)
-        self.member_repo.update(db_apis.get_session(),
-                                member.id,
-                                provisioning_status=constants.ACTIVE)
+        ctx = context.Context(project_id=member.project_id)
+
+        current_state = member.provisioning_status
+        if current_state == constants.PENDING_CREATE:
+            ctx.notification = notification.MemberCreate(ctx)
+        elif current_state == constants.PENDING_UPDATE:
+            ctx.notification = notification.MemberUpdate(ctx)
+        with notification.send_member_end_notification(ctx, member.to_dict(), constants.ACTIVE):
+            self.member_repo.update(db_apis.get_session(),
+                                    member.id,
+                                    provisioning_status=constants.ACTIVE)
 
     def revert(self, member, *args, **kwargs):
         """Mark the member as broken
@@ -2257,8 +2282,16 @@ class MarkPoolActiveInDB(BaseDatabaseTask):
                   pool.id)
 
         ctx = context.Context(project_id=pool.project_id)
-        ctx.notification = notification.PoolCreate(ctx)
-        with notification.sendPoolEndNotification(ctx, pool.to_dict(), constants.ACTIVE):
+
+        current_state = pool.provisioning_status
+        if current_state == constants.PENDING_CREATE:
+            ctx.notification = notification.PoolCreate(ctx)
+        elif current_state == constants.PENDING_UPDATE:
+            ctx.notification = notification.PoolUpdate(ctx)
+
+        listeners = [l.id for l in pool.listeners]
+
+        with notification.send_pool_end_notification(ctx, pool.to_dict(), constants.ACTIVE, listeners):
             self.pool_repo.update(db_apis.get_session(),
                                     pool.id,
                                     provisioning_status=constants.ACTIVE)

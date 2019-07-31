@@ -372,7 +372,7 @@ class LoadBalancersController(base.BaseController):
             flavor_dict = self._apply_flavor_to_lb_dict(lock_session, driver,
                                                         lb_dict)
 
-            with notification.sendLBStartNotification(context, lb_dict):
+            with notification.send_lb_start_notification(context, lb_dict):
                 db_lb = self.repositories.create_load_balancer_and_vip(lock_session, lb_dict, vip_dict)
                 
 
@@ -595,7 +595,7 @@ class LoadBalancersController(base.BaseController):
                 db_vip_dict = db_lb_dict.pop('vip')
                 self.repositories.vip.update(lock_session, id, **db_vip_dict)
             if db_lb_dict:
-                with notification.sendLBStartNotification(context, lb_dict):
+                with notification.send_lb_start_notification(context, lb_dict):
                     self.repositories.load_balancer.update(lock_session, id,
                                                             **db_lb_dict) 
 
@@ -633,7 +633,7 @@ class LoadBalancersController(base.BaseController):
                      id, driver.name)
             provider_loadbalancer = (
                 driver_utils.db_loadbalancer_to_provider_loadbalancer(db_lb))
-            with notification.sendLBStartNotification(context, db_lb.to_dict()):
+            with notification.send_lb_start_notification(context, db_lb.to_dict()):
                 driver_utils.call_provider(driver.name, driver.loadbalancer_delete,
                                        provider_loadbalancer, cascade)
 

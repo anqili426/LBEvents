@@ -58,7 +58,17 @@ class StartNotification(object):
         if etype:
             message = str(value)
             exception = traceback.format_exception(etype, value, tb)
-            self._notifier.notify_exc_info(message, exception)
+            self.context.notification.notify_exc_info(message, exception)
+
+class DoNothing():
+    def __init__(self):
+        pass
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, etype, value, tb):
+        pass
 
 class OctaviaAPINotification(object):
     event_type_format = 'octavia.%s.%s'
@@ -253,6 +263,19 @@ class PoolCreate(OctaviaAPINotification):
         return ['id', 'name', 'provisioning_status', 'load_balancer', 'listeners', 'lb_algorithm']
 
 
+class PoolUpdate(OctaviaAPINotification):
+    @abc.abstractmethod
+    def event_type(self):
+        return 'loadbalancer_pool.update'
+
+    @abc.abstractmethod
+    def required_start_traits(self):
+        return ['id', 'name', 'provisioning_status', 'load_balancer', 'listeners', 'lb_algorithm']
+
+    def required_end_traits(self):
+        return ['id', 'name', 'provisioning_status', 'load_balancer', 'listeners', 'lb_algorithm']
+
+
 class PoolDelete(OctaviaAPINotification):
     @abc.abstractmethod
     def event_type(self):
@@ -273,10 +296,22 @@ class MemberCreate(OctaviaAPINotification):
 
     @abc.abstractmethod
     def required_start_traits(self):
-        return ['id', 'name', 'provisioning_status', 'provider']
+        return ['id', 'name', 'provisioning_status', 'ip_address']
 
     def required_end_traits(self):
-        return ['id', 'name', 'provisioning_status', 'provider']
+        return ['id', 'name', 'provisioning_status', 'ip_address']
+
+class MemberUpdate(OctaviaAPINotification):
+    @abc.abstractmethod
+    def event_type(self):
+        return 'loadbalancer_member.update'
+
+    @abc.abstractmethod
+    def required_start_traits(self):
+        return ['id', 'name', 'provisioning_status', 'ip_address']
+
+    def required_end_traits(self):
+        return ['id', 'name', 'provisioning_status', 'ip_address']
 
 
 class MemberDelete(OctaviaAPINotification):
@@ -286,10 +321,10 @@ class MemberDelete(OctaviaAPINotification):
 
     @abc.abstractmethod
     def required_start_traits(self):
-        return ['id', 'name', 'provisioning_status', 'provider']
+        return ['id', 'name', 'provisioning_status', 'ip_address']
 
     def required_end_traits(self):
-        return ['id', 'name', 'provisioning_status', 'provider']
+        return ['id', 'name', 'provisioning_status', 'ip_address']
 
 
 class MonitorCreate(OctaviaAPINotification):
@@ -299,10 +334,23 @@ class MonitorCreate(OctaviaAPINotification):
 
     @abc.abstractmethod
     def required_start_traits(self):
-        return ['id', 'name', 'provisioning_status', 'provider']
+        return ['id', 'name', 'provisioning_status', 'pool', 'timeout', 'delay']
 
     def required_end_traits(self):
-        return ['id', 'name', 'provisioning_status', 'provider']
+        return ['id', 'name', 'provisioning_status', 'pool', 'timeout', 'delay']
+
+
+class MonitorUpdate(OctaviaAPINotification):
+    @abc.abstractmethod
+    def event_type(self):
+        return 'loadbalancer_monitor.update'
+
+    @abc.abstractmethod
+    def required_start_traits(self):
+        return ['id', 'name', 'provisioning_status', 'pool', 'timeout', 'delay']
+
+    def required_end_traits(self):
+        return ['id', 'name', 'provisioning_status', 'pool', 'timeout', 'delay']
 
 
 class MonitorDelete(OctaviaAPINotification):
@@ -312,24 +360,24 @@ class MonitorDelete(OctaviaAPINotification):
 
     @abc.abstractmethod
     def required_start_traits(self):
-        return ['id', 'name', 'provisioning_status', 'provider']
+        return ['id', 'name', 'provisioning_status', 'pool', 'timeout', 'delay']
 
     def required_end_traits(self):
-        return ['id', 'name', 'provisioning_status', 'provider']
+        return ['id', 'name', 'provisioning_status', 'pool', 'timeout', 'delay']
 
-def sendLBStartNotification(context, lb_data, provisioning_status=None):
+def send_lb_start_notification(context, lb_data, provisioning_status=None):
     return StartNotification(context, id=lb_data.get('id'), 
                                       name=lb_data.get('name'), 
                                       provisioning_status=(provisioning_status if provisioning_status else lb_data.get('provisioning_status')),
                                       provider=lb_data.get('provider'))
 
-def sendLBEndNotification(context, lb_data, provisioning_status=None):
+def send_lb_end_notification(context, lb_data, provisioning_status=None):
     return EndNotification(context, id=lb_data.get('id'), 
                                       name=lb_data.get('name'), 
                                       provisioning_status=(provisioning_status if provisioning_status else lb_data.get('provisioning_status')),
                                       provider=lb_data.get('provider'))
 
-def sendListenerStartNotification(context, listener_data, provisioning_status=None):
+def send_listener_start_notification(context, listener_data, provisioning_status=None):
     return StartNotification(context, id=listener_data.get('id'),
                                       name=listener_data.get('name'),
                                       provisioning_status=(provisioning_status if provisioning_status else listener_data.get('provisioning_status')),
@@ -338,7 +386,7 @@ def sendListenerStartNotification(context, listener_data, provisioning_status=No
                                       protocol_port=listener_data.get('protocol_port'),
                                       connection_limit=listener_data.get('connection_limit'))
                             
-def sendListenerEndNotification(context, listener_data, provisioning_status=None):
+def send_listener_end_notification(context, listener_data, provisioning_status=None):
     return EndNotification(context, id=listener_data.get('id'),
                                       name=listener_data.get('name'),
                                       provisioning_status=(provisioning_status if provisioning_status else listener_data.get('provisioning_status')),
@@ -347,21 +395,49 @@ def sendListenerEndNotification(context, listener_data, provisioning_status=None
                                       protocol_port=listener_data.get('protocol_port'),
                                       connection_limit=listener_data.get('connection_limit'))
 
-def sendPoolStartNotification(context, pool_data, provisioning_status=None):
+def send_pool_start_notification(context, pool_data, provisioning_status=None, listeners=None):
     return  StartNotification(context, id=pool_data.get('id'),
                                     name=pool_data.get('name'),
                                     provisioning_status=(provisioning_status if provisioning_status else pool_data.get('provisioning_status')),
                                     load_balancer=pool_data.get('load_balancer_id'),
-                                    listeners=pool_data.get('listeners'),
+                                    listeners=listeners,
                                     lb_algorithm=pool_data.get('lb_algorithm'))
 
-def sendPoolEndNotification(context, pool_data, provisioning_status=None):
+def send_pool_end_notification(context, pool_data, provisioning_status=None, listeners=None):
     return  EndNotification(context, id=pool_data.get('id'),
                                     name=pool_data.get('name'),
                                     provisioning_status=(provisioning_status if provisioning_status else pool_data.get('provisioning_status')),
                                     load_balancer=pool_data.get('load_balancer_id'),
-                                    listeners=pool_data.get('listeners'),
+                                    listeners=listeners,
                                     lb_algorithm=pool_data.get('lb_algorithm'))
+
+def send_member_start_notification(context, member_data, provisioning_status=None):
+    return  StartNotification(context, id=member_data.get('id'),
+                                    name=member_data.get('name'),
+                                    provisioning_status=(provisioning_status if provisioning_status else member_data.get('provisioning_status')),
+                                    ip_address=member_data.get('ip_address'))
+
+def send_member_end_notification(context, member_data, provisioning_status=None):
+    return  EndNotification(context, id=member_data.get('id'),
+                                    name=member_data.get('name'),
+                                    provisioning_status=(provisioning_status if provisioning_status else member_data.get('provisioning_status')),
+                                    ip_address=member_data.get('ip_address'))
+
+def send_monitor_start_notification(context, monitor_data, provisioning_status=None):
+    return StartNotification(context, id=monitor_data.get('id'),
+                                    name=monitor_data.get('name'),
+                                    provisioning_status=(provisioning_status if provisioning_status else monitor_data.get('provisioning_status')),
+                                    pool=monitor_data.get('pool_id'),
+                                    timeout=monitor_data.get('timeout'),
+                                    delay=monitor_data.get('delay'))
+
+def send_monitor_end_notification(context, monitor_data, provisioning_status=None):
+    return EndNotification(context, id=monitor_data.get('id'),
+                                    name=monitor_data.get('name'),
+                                    provisioning_status=(provisioning_status if provisioning_status else monitor_data.get('provisioning_status')),
+                                    pool=monitor_data.get('pool_id'),
+                                    timeout=monitor_data.get('timeout'),
+                                    delay=monitor_data.get('delay'))
 
 
 

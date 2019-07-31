@@ -28,6 +28,8 @@ from octavia.api.v2.types import member as member_types
 from octavia.common import constants
 from octavia.common import data_models
 from octavia.common import exceptions
+from octavia.common import notification
+from octavia.common.notification import StartNotification
 import octavia.common.validate as validate
 from octavia.db import api as db_api
 from octavia.db import prepare as db_prepare
@@ -178,17 +180,24 @@ class MemberController(base.BaseController):
 
             db_member = self._validate_create_member(lock_session, member_dict)
 
-            # Prepare the data for the driver data model
-            provider_member = (
-                driver_utils.db_member_to_provider_member(db_member))
+            with self._send_lb_or_listener_or_pool_notification(context, lock_session, lb_id=pool.load_balancer_id):
+                for listener in pool.listeners:
+                    with self._send_lb_or_listener_or_pool_notification(context, lock_session, listener_id=listener.id):
+                        pass
+                with self._send_lb_or_listener_or_pool_notification(context, lock_session, pool_id=pool.id, member=db_member):
+                    context.notification = notification.MemberCreate(context)
+                    with notification.send_member_start_notification(context, member_dict):
+                        # Prepare the data for the driver data model
+                        provider_member = (
+                            driver_utils.db_member_to_provider_member(db_member))
 
-            # Dispatch to the driver
-            LOG.info("Sending create Member %s to provider %s",
-                     db_member.id, driver.name)
-            driver_utils.call_provider(
-                driver.name, driver.member_create, provider_member)
+                        # Dispatch to the driver
+                        LOG.info("Sending create Member %s to provider %s",
+                                db_member.id, driver.name)
+                        driver_utils.call_provider(
+                            driver.name, driver.member_create, provider_member)
 
-            lock_session.commit()
+                        lock_session.commit()
         except Exception:
             with excutils.save_and_reraise_exception():
                 lock_session.rollback()
@@ -197,6 +206,25 @@ class MemberController(base.BaseController):
         result = self._convert_db_to_type(db_member,
                                           member_types.MemberResponse)
         return member_types.MemberRootResponse(member=result)
+
+    def _send_lb_or_listener_or_pool_notification(self, context, session, lb_id=None, listener_id=None, pool_id=None, member=None):
+        if lb_id:
+            context.notification = notification.LoadBalancerUpdate(context)
+            lb_repo = self.repositories.load_balancer
+            db_lb = lb_repo.get(session, id=lb_id)
+            return notification.send_lb_start_notification(context, db_lb.to_dict())
+        elif listener_id:
+            context.notification = notification.ListenerUpdate(context)
+            listener_repo = self.repositories.listener 
+            db_listener = listener_repo.get(session, id=listener_id)
+            return notification.send_listener_start_notification(context, db_listener.to_dict())
+        elif pool_id:
+            context.notification = notification.PoolUpdate(context)
+            db_pool = self._get_db_pool(context.session, pool_id)
+            listeners = self._get_affected_listener_ids(session, member)
+            return notification.send_pool_start_notification(context, db_pool.to_dict(), listeners=listeners) 
+        else:
+            return notification.DoNothing()
 
     def _graph_create(self, lock_session, member_dict):
         pool = self.repositories.pool.get(lock_session, id=self.pool_id)
@@ -242,18 +270,26 @@ class MemberController(base.BaseController):
             old_provider_member = driver_utils.db_member_to_provider_member(
                 db_member)
 
-            # Dispatch to the driver
-            LOG.info("Sending update Member %s to provider %s", id,
-                     driver.name)
-            driver_utils.call_provider(
-                driver.name, driver.member_update,
-                old_provider_member,
-                driver_dm.Member.from_dict(provider_member_dict))
+            with self._send_lb_or_listener_or_pool_notification(context, lock_session, lb_id=pool.load_balancer_id):
+                for listener in pool.listeners:
+                    with self._send_lb_or_listener_or_pool_notification(context, lock_session, listener_id=listener.id):
+                        pass
+                with self._send_lb_or_listener_or_pool_notification(context, lock_session, pool_id=pool.id, member=db_member):
+                    context.notification = notification.MemberUpdate(context)
+                    with notification.send_member_start_notification(context, member_dict):
 
-            # Update the database to reflect what the driver just accepted
-            member.provisioning_status = constants.PENDING_UPDATE
-            db_member_dict = member.to_dict(render_unsets=False)
-            self.repositories.member.update(lock_session, id, **db_member_dict)
+                        # Dispatch to the driver
+                        LOG.info("Sending update Member %s to provider %s", id,
+                                driver.name)
+                        driver_utils.call_provider(
+                            driver.name, driver.member_update,
+                            old_provider_member,
+                            driver_dm.Member.from_dict(provider_member_dict))
+
+                        # Update the database to reflect what the driver just accepted
+                        member.provisioning_status = constants.PENDING_UPDATE
+                        db_member_dict = member.to_dict(render_unsets=False)
+                        self.repositories.member.update(lock_session, id, **db_member_dict)
 
         # Force SQL alchemy to query the DB, otherwise we get inconsistent
         # results
@@ -289,12 +325,20 @@ class MemberController(base.BaseController):
                 lock_session, db_member.id,
                 provisioning_status=constants.PENDING_DELETE)
 
-            LOG.info("Sending delete Member %s to provider %s", id,
-                     driver.name)
-            provider_member = (
-                driver_utils.db_member_to_provider_member(db_member))
-            driver_utils.call_provider(driver.name, driver.member_delete,
-                                       provider_member)
+            with self._send_lb_or_listener_or_pool_notification(context, lock_session, lb_id=pool.load_balancer_id):
+                for listener in pool.listeners:
+                    with self._send_lb_or_listener_or_pool_notification(context, lock_session, listener_id=listener.id):
+                        pass
+                with self._send_lb_or_listener_or_pool_notification(context, lock_session, pool_id=pool.id, member=db_member):
+                    context.notification = notification.MemberDelete(context)
+                    with notification.send_member_start_notification(context, db_member.to_dict()):
+
+                        LOG.info("Sending delete Member %s to provider %s", id,
+                                driver.name)
+                        provider_member = (
+                            driver_utils.db_member_to_provider_member(db_member))
+                        driver_utils.call_provider(driver.name, driver.member_delete,
+                                                provider_member)
 
 
 class MembersController(MemberController):

@@ -32,6 +32,8 @@ from octavia.common import constants
 from octavia.common import data_models
 from octavia.common import exceptions
 from octavia.common import validate
+from octavia.common import notification
+from octavia.common.notification import StartNotification
 from octavia.db import api as db_api
 from octavia.db import prepare as db_prepare
 from octavia.i18n import _
@@ -250,35 +252,21 @@ class PoolsController(base.BaseController):
             db_pool = self._validate_create_pool(
                 lock_session, pool_dict, listener_id)
 
-            # context.notification = notification.LoadBalancerUpdate(context)
-            # lb_repo = self.repositories.load_balancer
-            # db_lb = lb_repo.get(lock_session, id=load_balancer_id)
-            # with StartNotification(context, id=db_lb.id, 
-            #                                 name=db_lb.name, 
-            #                                 provisioning_status=db_lb.provisioning_status,
-            #                                 provider=db_lb.provider):
-            #     context.notification = notification.ListenerUpdate(context)
-            #     listener_repo = self.repositories.listeners 
-            #     db_listener = lb_repo.get(lock_session, id=listener_id)
-            #     with StartNotification(context, id=listener_dict.get('id'),
-            #                                     name=listener_dict.get('name'),
-            #                                     provisioning_status=listener_dict.get('provisioning_status'),
-            #                                     load_balancer=listener_dict.get('load_balancer_id'),
-            #                                     protocol=listener_dict.get('protocol'),
-            #                                     protocol_port=listener_dict.get('protocol_port'),
-            #                                     connection_limit=listener_dict.get('connection_limit')):
+            with self._send_lb_or_listener_notification(context=context, session=lock_session, lb_id=pool.loadbalancer_id):
+                with self._send_lb_or_listener_notification(context=context, session=lock_session, listener_id=pool.listener_id):
+                    context.notification = notification.PoolCreate(context)
+                    with notification.send_pool_start_notification(context, pool_dict, listeners=[listener_id] if listener_id else []):
+                        # Prepare the data for the driver data model
+                        provider_pool = (
+                            driver_utils.db_pool_to_provider_pool(db_pool))
 
-            # Prepare the data for the driver data model
-            provider_pool = (
-                driver_utils.db_pool_to_provider_pool(db_pool))
+                        # Dispatch to the driver
+                        LOG.info("Sending create Pool %s to provider %s",
+                                db_pool.id, driver.name)
+                        driver_utils.call_provider(
+                            driver.name, driver.pool_create, provider_pool)
 
-            # Dispatch to the driver
-            LOG.info("Sending create Pool %s to provider %s",
-                     db_pool.id, driver.name)
-            driver_utils.call_provider(
-                driver.name, driver.pool_create, provider_pool)
-
-            lock_session.commit()
+                        lock_session.commit()
         except Exception:
             with excutils.save_and_reraise_exception():
                 lock_session.rollback()
@@ -286,6 +274,20 @@ class PoolsController(base.BaseController):
         db_pool = self._get_db_pool(context.session, db_pool.id)
         result = self._convert_db_to_type(db_pool, pool_types.PoolResponse)
         return pool_types.PoolRootResponse(pool=result)
+
+    def _send_lb_or_listener_notification(self, context, session, lb_id=None, listener_id=None):
+        if lb_id:
+            context.notification = notification.LoadBalancerUpdate(context)
+            lb_repo = self.repositories.load_balancer
+            db_lb = lb_repo.get(session, id=lb_id)
+            return notification.send_lb_start_notification(context, db_lb.to_dict())
+        elif listener_id:
+            context.notification = notification.ListenerUpdate(context)
+            listener_repo = self.repositories.listener 
+            db_listener = listener_repo.get(session, id=listener_id)
+            return notification.send_listener_start_notification(context, db_listener.to_dict())
+        else:
+            return notification.DoNothing()
 
     def _graph_create(self, session, lock_session, pool_dict):
         load_balancer_id = pool_dict['load_balancer_id']
@@ -424,18 +426,24 @@ class PoolsController(base.BaseController):
             old_provider_pool = driver_utils.db_pool_to_provider_pool(
                 db_pool)
 
-            # Dispatch to the driver
-            LOG.info("Sending update Pool %s to provider %s", id, driver.name)
-            driver_utils.call_provider(
-                driver.name, driver.pool_update,
-                old_provider_pool,
-                driver_dm.Pool.from_dict(provider_pool_dict))
+            with self._send_lb_or_listener_notification(context=context, session=lock_session, lb_id=db_pool.load_balancer_id):
+                for listener in db_pool.listeners:
+                    with self._send_lb_or_listener_notification(context=context, session=lock_session, listener_id=listener.id):
+                        pass
+                context.notification = notification.PoolUpdate(context)
+                with notification.send_pool_start_notification(context, db_pool.to_dict(), listeners=self._get_affected_listener_ids(db_pool)):
+                    # Dispatch to the driver
+                    LOG.info("Sending update Pool %s to provider %s", id, driver.name)
+                    driver_utils.call_provider(
+                            driver.name, driver.pool_update,
+                            old_provider_pool,
+                            driver_dm.Pool.from_dict(provider_pool_dict))
 
-            # Update the database to reflect what the driver just accepted
-            pool.provisioning_status = constants.PENDING_UPDATE
-            db_pool_dict = pool.to_dict(render_unsets=False)
-            self.repositories.update_pool_and_sp(lock_session, id,
-                                                 db_pool_dict)
+                        # Update the database to reflect what the driver just accepted
+                    pool.provisioning_status = constants.PENDING_UPDATE
+                    db_pool_dict = pool.to_dict(render_unsets=False)
+                    self.repositories.update_pool_and_sp(lock_session, id,
+                                                            db_pool_dict)
 
         # Force SQL alchemy to query the DB, otherwise we get inconsistent
         # results
@@ -469,11 +477,17 @@ class PoolsController(base.BaseController):
                 lock_session, db_pool.id,
                 provisioning_status=constants.PENDING_DELETE)
 
-            LOG.info("Sending delete Pool %s to provider %s", id, driver.name)
-            provider_pool = (
-                driver_utils.db_pool_to_provider_pool(db_pool))
-            driver_utils.call_provider(driver.name, driver.pool_delete,
-                                       provider_pool)
+            with self._send_lb_or_listener_notification(context=context, session=lock_session, lb_id=db_pool.load_balancer_id):
+                for listener in db_pool.listeners:
+                    with self._send_lb_or_listener_notification(context=context, session=lock_session, listener_id=listener.id):
+                        pass
+                context.notification = notification.PoolDelete(context)
+                with notification.send_pool_start_notification(context, db_pool.to_dict(), listeners=self._get_affected_listener_ids(db_pool)):
+                    LOG.info("Sending delete Pool %s to provider %s", id, driver.name)
+                    provider_pool = (
+                            driver_utils.db_pool_to_provider_pool(db_pool))
+                    driver_utils.call_provider(driver.name, driver.pool_delete,
+                                                provider_pool)
 
     @pecan.expose()
     def _lookup(self, pool_id, *remainder):

@@ -300,9 +300,9 @@ class ListenersController(base.BaseController):
             context.notification = notification.LoadBalancerUpdate(context)
             lb_repo = self.repositories.load_balancer
             db_lb = lb_repo.get(lock_session, id=load_balancer_id)
-            with notification.sendLBStartNotification(context, db_lb.to_dict()):
+            with notification.send_lb_start_notification(context, db_lb.to_dict()):
                 context.notification = notification.ListenerCreate(context)
-                with notification.sendListenerStartNotification(context, listener_dict):
+                with notification.send_listener_start_notification(context, listener_dict):
                     # Prepare the data for the driver data model
                     provider_listener = (
                         driver_utils.db_listener_to_provider_listener(db_listener))
@@ -493,17 +493,24 @@ class ListenersController(base.BaseController):
             old_provider_llistener = (
                 driver_utils.db_listener_to_provider_listener(db_listener))
 
-            # Dispatch to the driver
-            LOG.info("Sending update Listener %s to provider %s", id,
-                     driver.name)
-            driver_utils.call_provider(
-                driver.name, driver.listener_update,
-                old_provider_llistener,
-                driver_dm.Listener.from_dict(provider_listener_dict))
+            context.notification = notification.LoadBalancerUpdate(context)
+            lb_repo = self.repositories.load_balancer
+            db_lb = lb_repo.get(lock_session, id=load_balancer_id)
+            with notification.send_lb_start_notification(context, db_lb.to_dict()):
+                context.notification = notification.ListenerUpdate(context)
+                with notification.send_listener_start_notification(context, listener_dict):
 
-            # Update the database to reflect what the driver just accepted
-            self.repositories.listener.update(
-                lock_session, id, **listener.to_dict(render_unsets=False))
+                    # Dispatch to the driver
+                    LOG.info("Sending update Listener %s to provider %s", id,
+                            driver.name)
+                    driver_utils.call_provider(
+                        driver.name, driver.listener_update,
+                        old_provider_llistener,
+                        driver_dm.Listener.from_dict(provider_listener_dict))
+
+                    # Update the database to reflect what the driver just accepted
+                    self.repositories.listener.update(
+                        lock_session, id, **listener.to_dict(render_unsets=False))
 
         # Force SQL alchemy to query the DB, otherwise we get inconsistent
         # results
@@ -538,9 +545,9 @@ class ListenersController(base.BaseController):
             context.notification = notification.LoadBalancerUpdate(context)
             lb_repo = self.repositories.load_balancer
             db_lb = lb_repo.get(lock_session, id=load_balancer_id)
-            with notification.sendLBStartNotification(context, db_lb.to_dict()):
+            with notification.send_lb_start_notification(context, db_lb.to_dict()):
                 context.notification = notification.ListenerDelete(context)
-                with notification.sendListenerStartNotification(context, db_listener.to_dict()):
+                with notification.send_listener_start_notification(context, db_listener.to_dict()):
                     LOG.info("Sending delete Listener %s to provider %s", id,
                             driver.name)
                     provider_listener = (

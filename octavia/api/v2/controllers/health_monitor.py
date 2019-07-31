@@ -29,6 +29,8 @@ from octavia.api.v2.types import health_monitor as hm_types
 from octavia.common import constants as consts
 from octavia.common import data_models
 from octavia.common import exceptions
+from octavia.common import notification
+from octavia.common.notification import StartNotification
 from octavia.db import api as db_api
 from octavia.db import prepare as db_prepare
 from octavia.i18n import _
@@ -241,16 +243,24 @@ class HealthMonitorController(base.BaseController):
                 lock_session, health_monitor)
             db_hm = self._validate_create_hm(lock_session, hm_dict)
 
-            # Prepare the data for the driver data model
-            provider_healthmon = (driver_utils.db_HM_to_provider_HM(db_hm))
+            with self._send_lb_or_listener_or_pool_notification(context, lock_session, lb_id=pool.load_balancer_id):
+                for listener in pool.listeners:
+                    with self._send_lb_or_listener_or_pool_notification(context, lock_session, listener_id=listener.id):
+                        pass
+                with self._send_lb_or_listener_or_pool_notification(context, lock_session, pool_id=pool.id, hm=health_monitor):
+                    context.notification = notification.MonitorCreate(context)
+                    with notification.send_monitor_start_notification(context, hm_dict):
 
-            # Dispatch to the driver
-            LOG.info("Sending create Health Monitor %s to provider %s",
-                     db_hm.id, driver.name)
-            driver_utils.call_provider(
-                driver.name, driver.health_monitor_create, provider_healthmon)
+                        # Prepare the data for the driver data model
+                        provider_healthmon = (driver_utils.db_HM_to_provider_HM(db_hm))
 
-            lock_session.commit()
+                        # Dispatch to the driver
+                        LOG.info("Sending create Health Monitor %s to provider %s",
+                                db_hm.id, driver.name)
+                        driver_utils.call_provider(
+                            driver.name, driver.health_monitor_create, provider_healthmon)
+
+                        lock_session.commit()
         except odb_exceptions.DBError:
             lock_session.rollback()
             raise exceptions.InvalidOption(
@@ -263,6 +273,25 @@ class HealthMonitorController(base.BaseController):
         result = self._convert_db_to_type(
             db_hm, hm_types.HealthMonitorResponse)
         return hm_types.HealthMonitorRootResponse(healthmonitor=result)
+
+    def _send_lb_or_listener_or_pool_notification(self, context, session, lb_id=None, listener_id=None, pool_id=None, hm=None):
+        if lb_id:
+            context.notification = notification.LoadBalancerUpdate(context)
+            lb_repo = self.repositories.load_balancer
+            db_lb = lb_repo.get(session, id=lb_id)
+            return notification.send_lb_start_notification(context, db_lb.to_dict())
+        elif listener_id:
+            context.notification = notification.ListenerUpdate(context)
+            listener_repo = self.repositories.listener 
+            db_listener = listener_repo.get(session, id=listener_id)
+            return notification.send_listener_start_notification(context, db_listener.to_dict())
+        elif pool_id:
+            context.notification = notification.PoolUpdate(context)
+            db_pool = self._get_db_pool(context.session, pool_id)
+            listeners = self._get_affected_listener_ids(session, hm)
+            return notification.send_pool_start_notification(context, db_pool.to_dict(), listeners=listeners) 
+        else:
+            return notification.DoNothing()
 
     def _graph_create(self, lock_session, hm_dict):
         hm_dict = db_prepare.create_health_monitor(hm_dict)
@@ -368,19 +397,27 @@ class HealthMonitorController(base.BaseController):
             # Also prepare the baseline object data
             old_provider_healthmon = driver_utils.db_HM_to_provider_HM(db_hm)
 
-            # Dispatch to the driver
-            LOG.info("Sending update Health Monitor %s to provider %s",
-                     id, driver.name)
-            driver_utils.call_provider(
-                driver.name, driver.health_monitor_update,
-                old_provider_healthmon,
-                driver_dm.HealthMonitor.from_dict(provider_healthmon_dict))
+            with self._send_lb_or_listener_or_pool_notification(context, lock_session, lb_id=pool.load_balancer_id):
+                for listener in pool.listeners:
+                    with self._send_lb_or_listener_or_pool_notification(context, lock_session, listener_id=listener.id):
+                        pass
+                with self._send_lb_or_listener_or_pool_notification(context, lock_session, pool_id=pool.id, hm=db_hm):
+                    context.notification = notification.MonitorCreate(context)
+                    with notification.send_monitor_start_notification(context, db_hm.to_dict()):
 
-            # Update the database to reflect what the driver just accepted
-            health_monitor.provisioning_status = consts.PENDING_UPDATE
-            db_hm_dict = health_monitor.to_dict(render_unsets=False)
-            self.repositories.health_monitor.update(lock_session, id,
-                                                    **db_hm_dict)
+                        # Dispatch to the driver
+                        LOG.info("Sending update Health Monitor %s to provider %s",
+                                id, driver.name)
+                        driver_utils.call_provider(
+                            driver.name, driver.health_monitor_update,
+                            old_provider_healthmon,
+                            driver_dm.HealthMonitor.from_dict(provider_healthmon_dict))
+
+                        # Update the database to reflect what the driver just accepted
+                        health_monitor.provisioning_status = consts.PENDING_UPDATE
+                        db_hm_dict = health_monitor.to_dict(render_unsets=False)
+                        self.repositories.health_monitor.update(lock_session, id,
+                                                                **db_hm_dict)
 
         # Force SQL alchemy to query the DB, otherwise we get inconsistent
         # results
@@ -416,8 +453,16 @@ class HealthMonitorController(base.BaseController):
                 lock_session, db_hm.id,
                 provisioning_status=consts.PENDING_DELETE)
 
-            LOG.info("Sending delete Health Monitor %s to provider %s",
-                     id, driver.name)
-            provider_healthmon = driver_utils.db_HM_to_provider_HM(db_hm)
-            driver_utils.call_provider(
-                driver.name, driver.health_monitor_delete, provider_healthmon)
+            with self._send_lb_or_listener_or_pool_notification(context, lock_session, lb_id=pool.load_balancer_id):
+                for listener in pool.listeners:
+                    with self._send_lb_or_listener_or_pool_notification(context, lock_session, listener_id=listener.id):
+                        pass
+                with self._send_lb_or_listener_or_pool_notification(context, lock_session, pool_id=pool.id, hm=db_hm):
+                    context.notification = notification.MonitorCreate(context)
+                    with notification.send_monitor_start_notification(context, db_hm.to_dict()):
+                        
+                        LOG.info("Sending delete Health Monitor %s to provider %s",
+                                id, driver.name)
+                        provider_healthmon = driver_utils.db_HM_to_provider_HM(db_hm)
+                        driver_utils.call_provider(
+                            driver.name, driver.health_monitor_delete, provider_healthmon)
