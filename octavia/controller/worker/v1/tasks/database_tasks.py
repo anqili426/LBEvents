@@ -32,7 +32,6 @@ from octavia.common import utils
 from octavia.common import validate
 from octavia.common import context
 from octavia.common import notification
-from octavia.common.notification import EndNotification
 from octavia.controller.worker import task_utils as task_utilities
 from octavia.db import api as db_apis
 from octavia.db import repositories as repo

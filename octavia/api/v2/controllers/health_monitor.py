@@ -30,7 +30,6 @@ from octavia.common import constants as consts
 from octavia.common import data_models
 from octavia.common import exceptions
 from octavia.common import notification
-from octavia.common.notification import StartNotification
 from octavia.db import api as db_api
 from octavia.db import prepare as db_prepare
 from octavia.i18n import _
@@ -402,7 +401,7 @@ class HealthMonitorController(base.BaseController):
                     with self._send_lb_or_listener_or_pool_notification(context, lock_session, listener_id=listener.id):
                         pass
                 with self._send_lb_or_listener_or_pool_notification(context, lock_session, pool_id=pool.id, hm=db_hm):
-                    context.notification = notification.MonitorCreate(context)
+                    context.notification = notification.MonitorUpdate(context)
                     with notification.send_monitor_start_notification(context, db_hm.to_dict()):
 
                         # Dispatch to the driver
@@ -458,7 +457,7 @@ class HealthMonitorController(base.BaseController):
                     with self._send_lb_or_listener_or_pool_notification(context, lock_session, listener_id=listener.id):
                         pass
                 with self._send_lb_or_listener_or_pool_notification(context, lock_session, pool_id=pool.id, hm=db_hm):
-                    context.notification = notification.MonitorCreate(context)
+                    context.notification = notification.MonitorDelete(context)
                     with notification.send_monitor_start_notification(context, db_hm.to_dict()):
                         
                         LOG.info("Sending delete Health Monitor %s to provider %s",

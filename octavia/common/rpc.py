@@ -14,7 +14,6 @@ from oslo_config import cfg
 from oslo_log import log as logging
 import oslo_messaging as messaging
 from oslo_messaging.rpc import dispatcher
-from octavia.common import utils
 
 LOG = logging.getLogger(__name__)
 
@@ -28,13 +27,8 @@ def init(conf):
     global TRANSPORT, NOTIFICATION_TRANSPORT, NOTIFIER
     TRANSPORT = create_transport(get_transport_url())
     NOTIFICATION_TRANSPORT = messaging.get_notification_transport(conf)
-
-    json_serializer = messaging.JsonPayloadSerializer()
-    serializer = RequestContextSerializer(json_serializer)
     NOTIFIER = messaging.Notifier(
-            NOTIFICATION_TRANSPORT, driver='messaging', serializer=serializer)
-
-
+            NOTIFICATION_TRANSPORT, driver='messaging')
 
 def cleanup():
     global TRANSPORT, NOTIFICATION_TRANSPORT, NOTIFIER
@@ -93,26 +87,3 @@ def get_notifier(service=None, host=None, publisher_id=None):
     if not publisher_id:
         publisher_id = "%s.%s" % (service, host or CONF.host)
     return NOTIFIER.prepare(publisher_id=publisher_id)
-
-
-class RequestContextSerializer(messaging.Serializer):
-    def __init__(self, base):
-        self._base = base
-        super(RequestContextSerializer, self).__init__()
-
-    def serialize_entity(self, context, entity):
-        if not self._base:
-            return entity
-        return self._base.serialize_entity(context, entity)
-
-    def deserialize_entity(self, context, entity):
-        if not self._base:
-            return entity
-        return self._base.deserialize_entity(context, entity)
-
-    def serialize_context(self, context):
-        _context = context.to_dict()
-        return _context
-
-    def deserialize_context(self, context):
-        return karbor.context.RequestContext.from_dict(context)
