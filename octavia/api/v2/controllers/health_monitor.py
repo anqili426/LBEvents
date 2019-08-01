@@ -246,7 +246,8 @@ class HealthMonitorController(base.BaseController):
                 for listener in pool.listeners:
                     with self._send_lb_or_listener_or_pool_notification(context, lock_session, listener_id=listener.id):
                         pass
-                with self._send_lb_or_listener_or_pool_notification(context, lock_session, pool_id=pool.id, hm=health_monitor):
+                with self._send_lb_or_listener_or_pool_notification(context, lock_session, pool_id=pool.id):
+                # with self._send_lb_or_listener_or_pool_notification(context, lock_session, lb_id=pool.load_balancer_id):
                     context.notification = notification.MonitorCreate(context)
                     with notification.send_monitor_start_notification(context, hm_dict):
 
@@ -255,9 +256,9 @@ class HealthMonitorController(base.BaseController):
 
                         # Dispatch to the driver
                         LOG.info("Sending create Health Monitor %s to provider %s",
-                                db_hm.id, driver.name)
+                                        db_hm.id, driver.name)
                         driver_utils.call_provider(
-                            driver.name, driver.health_monitor_create, provider_healthmon)
+                                    driver.name, driver.health_monitor_create, provider_healthmon)
 
                         lock_session.commit()
         except odb_exceptions.DBError:
@@ -273,7 +274,7 @@ class HealthMonitorController(base.BaseController):
             db_hm, hm_types.HealthMonitorResponse)
         return hm_types.HealthMonitorRootResponse(healthmonitor=result)
 
-    def _send_lb_or_listener_or_pool_notification(self, context, session, lb_id=None, listener_id=None, pool_id=None, hm=None):
+    def _send_lb_or_listener_or_pool_notification(self, context, session, lb_id=None, listener_id=None, pool_id=None):
         if lb_id:
             context.notification = notification.LoadBalancerUpdate(context)
             lb_repo = self.repositories.load_balancer
@@ -286,9 +287,9 @@ class HealthMonitorController(base.BaseController):
             return notification.send_listener_start_notification(context, db_listener.to_dict())
         elif pool_id:
             context.notification = notification.PoolUpdate(context)
-            db_pool = self._get_db_pool(context.session, pool_id)
-            listeners = self._get_affected_listener_ids(session, hm)
-            return notification.send_pool_start_notification(context, db_pool.to_dict(), listeners=listeners) 
+            db_pool = self._get_db_pool(session, pool_id)
+            listeners = [l.id for l in db_pool.listeners]
+            return notification.send_pool_start_notification(context, db_pool.to_dict(), listeners=listeners)
         else:
             return notification.DoNothing()
 
@@ -400,7 +401,7 @@ class HealthMonitorController(base.BaseController):
                 for listener in pool.listeners:
                     with self._send_lb_or_listener_or_pool_notification(context, lock_session, listener_id=listener.id):
                         pass
-                with self._send_lb_or_listener_or_pool_notification(context, lock_session, pool_id=pool.id, hm=db_hm):
+                with self._send_lb_or_listener_or_pool_notification(context, lock_session, pool_id=pool.id):
                     context.notification = notification.MonitorUpdate(context)
                     with notification.send_monitor_start_notification(context, db_hm.to_dict()):
 
@@ -456,7 +457,7 @@ class HealthMonitorController(base.BaseController):
                 for listener in pool.listeners:
                     with self._send_lb_or_listener_or_pool_notification(context, lock_session, listener_id=listener.id):
                         pass
-                with self._send_lb_or_listener_or_pool_notification(context, lock_session, pool_id=pool.id, hm=db_hm):
+                with self._send_lb_or_listener_or_pool_notification(context, lock_session, pool_id=pool.id):
                     context.notification = notification.MonitorDelete(context)
                     with notification.send_monitor_start_notification(context, db_hm.to_dict()):
                         

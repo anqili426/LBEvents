@@ -219,7 +219,7 @@ class MemberController(base.BaseController):
             return notification.send_listener_start_notification(context, db_listener.to_dict())
         elif pool_id:
             context.notification = notification.PoolUpdate(context)
-            db_pool = self._get_db_pool(context.session, pool_id)
+            db_pool = self._get_db_pool(session, pool_id)
             listeners = self._get_affected_listener_ids(session, member)
             return notification.send_pool_start_notification(context, db_pool.to_dict(), listeners=listeners) 
         else:

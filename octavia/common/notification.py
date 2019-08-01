@@ -190,7 +190,14 @@ class LoadBalancerCreate(OctaviaAPINotification):
 class LoadBalancerDelete(OctaviaAPINotification):
     @abc.abstractmethod
     def event_type(self):
-        return 'loadbalancer.delete'       
+        return 'loadbalancer.delete'   
+
+    @abc.abstractmethod
+    def required_start_traits(self):
+        return []
+
+    def required_end_traits(self):
+        return []    
 
 
 class LoadBalancerUpdate(OctaviaAPINotification):
