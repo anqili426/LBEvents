@@ -42,7 +42,7 @@ class LoadBalancerFlows(object):
         self.pool_flows = pool_flows.PoolFlows()
         self.member_flows = member_flows.MemberFlows()
 
-    def get_create_load_balancer_flow(self, context, topology, listeners=None):
+    def get_create_load_balancer_flow(self, topology, listeners=None):
         """Creates a conditional graph flow that allocates a loadbalancer to
 
         two spare amphorae.

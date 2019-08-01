@@ -305,7 +305,7 @@ class ControllerWorker(base_taskflow.BaseTaskFlowEngine):
         wait=tenacity.wait_incrementing(
             RETRY_INITIAL_DELAY, RETRY_BACKOFF, RETRY_MAX),
         stop=tenacity.stop_after_attempt(RETRY_ATTEMPTS))
-    def create_load_balancer(self, context, load_balancer_id, flavor=None):
+    def create_load_balancer(self, load_balancer_id, flavor=None):
         """Creates a load balancer by allocating Amphorae.
 
         First tries to allocate an existing Amphora in READY state.
@@ -335,7 +335,7 @@ class ControllerWorker(base_taskflow.BaseTaskFlowEngine):
             constants.TOPOLOGY: topology
         }
 
-        create_lb_flow = self._lb_flows.get_create_load_balancer_flow(context=context,
+        create_lb_flow = self._lb_flows.get_create_load_balancer_flow(
             topology=topology, listeners=lb.listeners)
 
         create_lb_tf = self._taskflow_load(create_lb_flow, store=store)

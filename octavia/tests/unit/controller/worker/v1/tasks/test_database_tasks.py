@@ -99,7 +99,7 @@ _compute_mock.compute_flavor = COMPUTE_FLAVOR
 @mock.patch('octavia.db.api.get_session', return_value='TEST')
 @mock.patch('octavia.controller.worker.v1.tasks.database_tasks.LOG')
 @mock.patch('oslo_utils.uuidutils.generate_uuid', return_value=AMP_ID)
-class TestDatabaseTasks(base.TestCase):
+class TestDatabaseTasks(base.TestRpc):
 
     def setUp(self):
 
@@ -126,6 +126,10 @@ class TestDatabaseTasks(base.TestCase):
         self.l7rule_mock = mock.MagicMock()
         self.l7rule_mock.id = L7RULE_ID
         self.l7rule_mock.l7policy = self.l7policy_mock
+
+        # diltram: this one must be removed after fixing issue in oslo.config
+        # https://bugs.launchpad.net/oslo.config/+bug/1645868
+        database_tasks.CONF.__call__(args=[])
 
         super(TestDatabaseTasks, self).setUp()
 

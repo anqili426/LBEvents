@@ -168,6 +168,7 @@ class DeleteHealthMonitorInDB(BaseDatabaseTask):
         
         LOG.debug("DB delete health monitor: %s ", health_mon.id)
         try:
+             
             ctx = context.Context(project_id=health_mon.project_id)
             ctx.notification = notification.MonitorDelete(ctx)
             with notification.send_monitor_end_notification(ctx, health_mon.to_dict(), constants.DELETED):
@@ -229,6 +230,7 @@ class DeleteMemberInDB(BaseDatabaseTask):
         """
 
         LOG.debug("DB delete member for id: %s ", member.id)
+         
         ctx = context.Context(project_id=member.project_id)
         ctx.notification = notification.MemberDelete(ctx)
         with notification.send_member_end_notification(ctx, member.to_dict(), constants.DELETED):
@@ -262,7 +264,7 @@ class DeleteListenerInDB(BaseDatabaseTask):
         """
 
         LOG.debug("Delete in DB for listener id: %s", listener.id)
-
+         
         ctx = context.Context(project_id=listener.project_id)
         ctx.notification = notification.ListenerDelete(ctx)
         with notification.send_listener_end_notification(ctx, listener.to_dict(), constants.DELETED):
@@ -293,7 +295,7 @@ class DeletePoolInDB(BaseDatabaseTask):
         """
 
         LOG.debug("Delete in DB for pool id: %s ", pool.id)
-
+         
         ctx = context.Context(project_id=pool.project_id)
         ctx.notification = notification.PoolDelete(ctx)
         listeners = [l.id for l in pool.listeners]
@@ -994,13 +996,13 @@ class MarkLBActiveInDB(BaseDatabaseTask):
 
         LOG.info("Mark ACTIVE in DB for load balancer id: %s",
                  loadbalancer.id)
-
+         
         ctx = context.Context(project_id=loadbalancer.project_id)
 
         current_state = loadbalancer.provisioning_status
         if current_state == constants.PENDING_CREATE:
             ctx.notification = notification.LoadBalancerCreate(ctx)
-        elif current_state == constants.PENDING_UPDATE:
+        else:
             ctx.notification = notification.LoadBalancerUpdate(ctx)
 
         with notification.send_lb_end_notification(ctx, loadbalancer.to_dict(), constants.ACTIVE):
@@ -1143,7 +1145,7 @@ class MarkLBDeletedInDB(BaseDatabaseTask):
 
         LOG.debug("Mark DELETED in DB for load balancer id: %s",
                   loadbalancer.id)
-
+         
         ctx = context.Context(project_id=loadbalancer.project_id)
         ctx.notification = notification.LoadBalancerDelete(ctx)
 
@@ -1213,7 +1215,7 @@ class MarkLBAndListenersActiveInDB(BaseDatabaseTask):
         LOG.debug("Mark ACTIVE in DB for load balancer id: %s "
                   "and listener ids: %s", loadbalancer.id,
                   ', '.join([l.id for l in listeners]))
-
+        
         ctx = context.Context(project_id=loadbalancer.project_id)
         ctx.notification = notification.LoadBalancerUpdate(ctx)
         with notification.send_lb_end_notification(ctx, loadbalancer.to_dict(), constants.ACTIVE):
@@ -1225,7 +1227,7 @@ class MarkLBAndListenersActiveInDB(BaseDatabaseTask):
             current_state = listener.provisioning_status
             if current_state == constants.PENDING_CREATE:
                 ctx.notification = notification.ListenerCreate(ctx)
-            elif current_state == constants.PENDING_UPDATE:
+            else:
                 ctx.notification = notification.ListenerUpdate(ctx)
             
             with notification.send_listener_end_notification(ctx, listener.to_dict(), constants.ACTIVE):
@@ -1758,12 +1760,13 @@ class MarkHealthMonitorActiveInDB(BaseDatabaseTask):
         LOG.debug("Mark ACTIVE in DB for health monitor id: %s",
                   health_mon.id)
 
+         
         ctx = context.Context(project_id=health_mon.project_id)
 
         current_state = health_mon.provisioning_status
         if current_state == constants.PENDING_CREATE:
             ctx.notification = notification.MonitorCreate(ctx)
-        elif current_state == constants.PENDING_UPDATE:
+        else:
             ctx.notification = notification.MonitorUpdate(ctx)
 
         with notification.send_monitor_end_notification(ctx, health_mon.to_dict()):
@@ -2150,12 +2153,13 @@ class MarkMemberActiveInDB(BaseDatabaseTask):
         """
 
         LOG.debug("Mark ACTIVE in DB for member id: %s", member.id)
+         
         ctx = context.Context(project_id=member.project_id)
 
         current_state = member.provisioning_status
         if current_state == constants.PENDING_CREATE:
             ctx.notification = notification.MemberCreate(ctx)
-        elif current_state == constants.PENDING_UPDATE:
+        else:
             ctx.notification = notification.MemberUpdate(ctx)
         with notification.send_member_end_notification(ctx, member.to_dict(), constants.ACTIVE):
             self.member_repo.update(db_apis.get_session(),
@@ -2280,13 +2284,13 @@ class MarkPoolActiveInDB(BaseDatabaseTask):
 
         LOG.debug("Mark ACTIVE in DB for pool id: %s",
                   pool.id)
-
+         
         ctx = context.Context(project_id=pool.project_id)
 
         current_state = pool.provisioning_status
         if current_state == constants.PENDING_CREATE:
             ctx.notification = notification.PoolCreate(ctx)
-        elif current_state == constants.PENDING_UPDATE:
+        else:
             ctx.notification = notification.PoolUpdate(ctx)
 
         listeners = [l.id for l in pool.listeners]
