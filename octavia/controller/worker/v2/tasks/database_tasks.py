@@ -30,6 +30,8 @@ from octavia.common import data_models
 import octavia.common.tls_utils.cert_parser as cert_parser
 from octavia.common import utils
 from octavia.common import validate
+from octavia.common import context
+from octavia.common import notification
 from octavia.controller.worker import task_utils as task_utilities
 from octavia.db import api as db_apis
 from octavia.db import repositories as repo
@@ -164,8 +166,11 @@ class DeleteHealthMonitorInDB(BaseDatabaseTask):
 
         LOG.debug("DB delete health monitor: %s ", health_mon.id)
         try:
-            self.health_mon_repo.delete(db_apis.get_session(),
-                                        id=health_mon.id)
+            ctx = context.Context(project_id=health_mon.project_id)
+            ctx.notification = notification.MonitorDelete(ctx)
+            with notification.send_monitor_end_notification(ctx, health_mon.to_dict(), constants.DELETED):
+                self.health_mon_repo.delete(db_apis.get_session(),
+                                            id=health_mon.id)
         except exc.NoResultFound:
             # ignore if the HealthMonitor was not found
             pass
@@ -222,7 +227,11 @@ class DeleteMemberInDB(BaseDatabaseTask):
         """
 
         LOG.debug("DB delete member for id: %s ", member.id)
-        self.member_repo.delete(db_apis.get_session(), id=member.id)
+
+        ctx = context.Context(project_id=member.project_id)
+        ctx.notification = notification.MemberDelete(ctx)
+        with notification.send_member_end_notification(ctx, member.to_dict(), constants.DELETED):
+            self.member_repo.delete(db_apis.get_session(), id=member.id)
 
     def revert(self, member, *args, **kwargs):
         """Mark the member ERROR since the delete couldn't happen
@@ -251,7 +260,11 @@ class DeleteListenerInDB(BaseDatabaseTask):
         :returns: None
         """
         LOG.debug("Delete in DB for listener id: %s", listener.id)
-        self.listener_repo.delete(db_apis.get_session(), id=listener.id)
+
+        ctx = context.Context(project_id=listener.project_id)
+        ctx.notification = notification.ListenerDelete(ctx)
+        with notification.send_listener_end_notification(ctx, listener.to_dict(), constants.DELETED):
+            self.listener_repo.delete(db_apis.get_session(), id=listener.id)
 
     def revert(self, listener, *args, **kwargs):
         """Mark the listener ERROR since the listener didn't delete
@@ -278,7 +291,12 @@ class DeletePoolInDB(BaseDatabaseTask):
         """
 
         LOG.debug("Delete in DB for pool id: %s ", pool.id)
-        self.pool_repo.delete(db_apis.get_session(), id=pool.id)
+
+        ctx = context.Context(project_id=pool.project_id)
+        ctx.notification = notification.PoolDelete(ctx)
+        listeners = [l.id for l in pool.listeners]
+        with notification.send_pool_end_notification(ctx, pool.to_dict(), constants.DELETED, listeners):
+            self.pool_repo.delete(db_apis.get_session(), id=pool.id)
 
     def revert(self, pool, *args, **kwargs):
         """Mark the pool ERROR since the delete couldn't happen
@@ -972,11 +990,21 @@ class MarkLBActiveInDB(BaseDatabaseTask):
             for listener in loadbalancer.listeners:
                 self._mark_listener_status(listener, constants.ACTIVE)
 
-        LOG.info("Mark ACTIVE in DB for load balancer id: %s",
-                 loadbalancer.id)
-        self.loadbalancer_repo.update(db_apis.get_session(),
-                                      loadbalancer.id,
-                                      provisioning_status=constants.ACTIVE)
+
+        ctx = context.Context(project_id=loadbalancer.project_id)
+
+        current_state = loadbalancer.provisioning_status
+        if current_state == constants.PENDING_CREATE:
+            ctx.notification = notification.LoadBalancerCreate(ctx)
+        else:
+            ctx.notification = notification.LoadBalancerUpdate(ctx)
+
+        with notification.send_lb_end_notification(ctx, loadbalancer.to_dict(), constants.ACTIVE):
+            LOG.info("Mark ACTIVE in DB for load balancer id: %s",
+                    loadbalancer.id)
+            self.loadbalancer_repo.update(db_apis.get_session(),
+                                        loadbalancer.id,
+                                        provisioning_status=constants.ACTIVE)
 
     def _mark_listener_status(self, listener, status):
         self.listener_repo.update(db_apis.get_session(),
@@ -1111,11 +1139,15 @@ class MarkLBDeletedInDB(BaseDatabaseTask):
         :returns: None
         """
 
-        LOG.debug("Mark DELETED in DB for load balancer id: %s",
-                  loadbalancer.id)
-        self.loadbalancer_repo.update(db_apis.get_session(),
-                                      loadbalancer.id,
-                                      provisioning_status=constants.DELETED)
+        ctx = context.Context(project_id=loadbalancer.project_id)
+        ctx.notification = notification.LoadBalancerDelete(ctx)
+
+        with notification.send_lb_end_notification(ctx, loadbalancer.to_dict(), constants.DELETED):
+            LOG.debug("Mark DELETED in DB for load balancer id: %s",
+                    loadbalancer.id)
+            self.loadbalancer_repo.update(db_apis.get_session(),
+                                        loadbalancer.id,
+                                        provisioning_status=constants.DELETED)
 
     def revert(self, loadbalancer, *args, **kwargs):
         """Mark the load balancer as broken and ready to be cleaned up.
@@ -1178,12 +1210,24 @@ class MarkLBAndListenersActiveInDB(BaseDatabaseTask):
         LOG.debug("Mark ACTIVE in DB for load balancer id: %s "
                   "and listener ids: %s", loadbalancer.id,
                   ', '.join([l.id for l in listeners]))
-        self.loadbalancer_repo.update(db_apis.get_session(),
-                                      loadbalancer.id,
-                                      provisioning_status=constants.ACTIVE)
+
+        ctx = context.Context(project_id=loadbalancer.project_id)
+        ctx.notification = notification.LoadBalancerUpdate(ctx)
+        with notification.send_lb_end_notification(ctx, loadbalancer.to_dict(), constants.ACTIVE):
+            self.loadbalancer_repo.update(db_apis.get_session(),
+                                        loadbalancer.id,
+                                        provisioning_status=constants.ACTIVE)
         for listener in listeners:
-            self.listener_repo.update(db_apis.get_session(), listener.id,
-                                      provisioning_status=constants.ACTIVE)
+            ctx = context.Context(project_id=listener.project_id)
+            current_state = listener.provisioning_status
+            if current_state == constants.PENDING_CREATE:
+                ctx.notification = notification.ListenerCreate(ctx)
+            else:
+                ctx.notification = notification.ListenerUpdate(ctx)
+            
+            with notification.send_listener_end_notification(ctx, listener.to_dict(), constants.ACTIVE):
+                self.listener_repo.update(db_apis.get_session(), listener.id,
+                                        provisioning_status=constants.ACTIVE)
 
     def revert(self, loadbalancer, listeners, *args, **kwargs):
         """Mark the load balancer and listeners as broken.
@@ -1711,12 +1755,21 @@ class MarkHealthMonitorActiveInDB(BaseDatabaseTask):
         LOG.debug("Mark ACTIVE in DB for health monitor id: %s",
                   health_mon.id)
 
-        op_status = (constants.ONLINE if health_mon.enabled
-                     else constants.OFFLINE)
-        self.health_mon_repo.update(db_apis.get_session(),
-                                    health_mon.id,
-                                    provisioning_status=constants.ACTIVE,
-                                    operating_status=op_status)
+        ctx = context.Context(project_id=health_mon.project_id)
+
+        current_state = health_mon.provisioning_status
+        if current_state == constants.PENDING_CREATE:
+            ctx.notification = notification.MonitorCreate(ctx)
+        else:
+            ctx.notification = notification.MonitorUpdate(ctx)
+
+        with notification.send_monitor_end_notification(ctx, health_mon.to_dict()):
+            op_status = (constants.ONLINE if health_mon.enabled
+                        else constants.OFFLINE)
+            self.health_mon_repo.update(db_apis.get_session(),
+                                        health_mon.id,
+                                        provisioning_status=constants.ACTIVE,
+                                        operating_status=op_status)
 
     def revert(self, health_mon, *args, **kwargs):
         """Mark the health monitor as broken
@@ -2094,9 +2147,18 @@ class MarkMemberActiveInDB(BaseDatabaseTask):
         """
 
         LOG.debug("Mark ACTIVE in DB for member id: %s", member.id)
-        self.member_repo.update(db_apis.get_session(),
-                                member.id,
-                                provisioning_status=constants.ACTIVE)
+
+        ctx = context.Context(project_id=member.project_id)
+
+        current_state = member.provisioning_status
+        if current_state == constants.PENDING_CREATE:
+            ctx.notification = notification.MemberCreate(ctx)
+        else:
+            ctx.notification = notification.MemberUpdate(ctx)
+        with notification.send_member_end_notification(ctx, member.to_dict(), constants.ACTIVE):
+            self.member_repo.update(db_apis.get_session(),
+                                    member.id,
+                                    provisioning_status=constants.ACTIVE)
 
     def revert(self, member, *args, **kwargs):
         """Mark the member as broken
@@ -2216,9 +2278,21 @@ class MarkPoolActiveInDB(BaseDatabaseTask):
 
         LOG.debug("Mark ACTIVE in DB for pool id: %s",
                   pool.id)
-        self.pool_repo.update(db_apis.get_session(),
-                              pool.id,
-                              provisioning_status=constants.ACTIVE)
+
+        ctx = context.Context(project_id=pool.project_id)
+
+        current_state = pool.provisioning_status
+        if current_state == constants.PENDING_CREATE:
+            ctx.notification = notification.PoolCreate(ctx)
+        else:
+            ctx.notification = notification.PoolUpdate(ctx)
+
+        listeners = [l.id for l in pool.listeners]
+
+        with notification.send_pool_end_notification(ctx, pool.to_dict(), constants.ACTIVE, listeners):
+            self.pool_repo.update(db_apis.get_session(),
+                                pool.id,
+                                provisioning_status=constants.ACTIVE)
 
     def revert(self, pool, *args, **kwargs):
         """Mark the pool as broken

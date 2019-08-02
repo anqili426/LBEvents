@@ -166,8 +166,7 @@ class DeleteHealthMonitorInDB(BaseDatabaseTask):
 
         
         LOG.debug("DB delete health monitor: %s ", health_mon.id)
-        try:
-             
+        try:  
             ctx = context.Context(project_id=health_mon.project_id)
             ctx.notification = notification.MonitorDelete(ctx)
             with notification.send_monitor_end_notification(ctx, health_mon.to_dict(), constants.DELETED):

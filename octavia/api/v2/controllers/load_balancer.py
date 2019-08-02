@@ -569,34 +569,34 @@ class LoadBalancersController(base.BaseController):
         with db_api.get_lock_session() as lock_session:
             self._test_lb_status(lock_session, id)
 
-            # Prepare the data for the driver data model
-            lb_dict = load_balancer.to_dict(render_unsets=False)
-            lb_dict['id'] = id
-            vip_dict = lb_dict.pop('vip', {})
-            lb_dict = driver_utils.lb_dict_to_provider_dict(lb_dict)
-            if 'qos_policy_id' in vip_dict:
-                lb_dict['vip_qos_policy_id'] = vip_dict['qos_policy_id']
+            with notification.send_lb_start_notification(context, db_lb.to_dict()):
+                # Prepare the data for the driver data model
+                lb_dict = load_balancer.to_dict(render_unsets=False)
+                lb_dict['id'] = id
+                vip_dict = lb_dict.pop('vip', {})
+                lb_dict = driver_utils.lb_dict_to_provider_dict(lb_dict)
+                if 'qos_policy_id' in vip_dict:
+                    lb_dict['vip_qos_policy_id'] = vip_dict['qos_policy_id']
 
-            # Also prepare the baseline object data
-            old_provider_lb = (
-                driver_utils.db_loadbalancer_to_provider_loadbalancer(db_lb))
+                # Also prepare the baseline object data
+                old_provider_lb = (
+                    driver_utils.db_loadbalancer_to_provider_loadbalancer(db_lb))
 
-            # Dispatch to the driver
-            LOG.info("Sending update Load Balancer %s to provider "
-                     "%s", id, driver.name)
-            driver_utils.call_provider(
-                driver.name, driver.loadbalancer_update,
-                old_provider_lb,
-                driver_dm.LoadBalancer.from_dict(lb_dict))
+                # Dispatch to the driver
+                LOG.info("Sending update Load Balancer %s to provider "
+                        "%s", id, driver.name)
+                driver_utils.call_provider(
+                    driver.name, driver.loadbalancer_update,
+                    old_provider_lb,
+                    driver_dm.LoadBalancer.from_dict(lb_dict))
 
-            db_lb_dict = load_balancer.to_dict(render_unsets=False)
-            if 'vip' in db_lb_dict:
-                db_vip_dict = db_lb_dict.pop('vip')
-                self.repositories.vip.update(lock_session, id, **db_vip_dict)
-            if db_lb_dict:
-                with notification.send_lb_start_notification(context, lb_dict):
+                db_lb_dict = load_balancer.to_dict(render_unsets=False)
+                if 'vip' in db_lb_dict:
+                    db_vip_dict = db_lb_dict.pop('vip')
+                    self.repositories.vip.update(lock_session, id, **db_vip_dict)
+                if db_lb_dict:
                     self.repositories.load_balancer.update(lock_session, id,
-                                                            **db_lb_dict) 
+                                                                **db_lb_dict) 
 
         # Force SQL alchemy to query the DB, otherwise we get inconsistent
         # results

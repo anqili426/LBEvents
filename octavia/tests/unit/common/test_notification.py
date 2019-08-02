@@ -114,32 +114,31 @@ class TestOctaviaNotification(base.TestCase):
 
     @patch.object(rpc, 'get_notifier')
     def test_start_event(self, notifier):
-        self.test_notification.notify_start(provider='test', id='111', provisioning_status='active', name='aaa')
+        self.test_notification.notify_start(provider='test', id='111', provisioning_status='active')
         self.assertTrue(notifier().info.called)
         a, _ = notifier().info.call_args
         self.assertEqual('octavia.notification_test.start', a[1])
 
     @patch.object(rpc, 'get_notifier')
     def test_end_event(self, notifier):
-        self.test_notification.notify_end(provider='test', id='111', provisioning_status='active', name='aaa')
+        self.test_notification.notify_end(provider='test', id='111', provisioning_status='active')
         self.assertTrue(notifier().info.called)
         a, _ = notifier().info.call_args
         self.assertEqual('octavia.notification_test.end', a[1])
 
     @patch.object(rpc, 'get_notifier')
     def test_verify_base_values(self, notifier):
-        self.test_notification.notify_start(provider='test', id='111', provisioning_status='active', name='aaa')
+        self.test_notification.notify_start(provider='test', id='111', provisioning_status='active')
         self.assertTrue(notifier().info.called)
         a, _ = notifier().info.call_args
         payload = a[2]
         self.assertIn('tenant_id', payload)
         self.assertIn('id', payload)
         self.assertIn('provisioning_status', payload)
-        self.assertIn('name', payload)
 
     @patch.object(rpc, 'get_notifier')
     def test_verify_required_start_args(self, notifier):
-        self.test_notification.notify_start(provider='foo', id='111', provisioning_status='active', name='aaa')
+        self.test_notification.notify_start(provider='foo', id='111', provisioning_status='active')
         self.assertTrue(notifier().info.called)
         a, _ = notifier().info.call_args
         payload = a[2]
@@ -147,7 +146,7 @@ class TestOctaviaNotification(base.TestCase):
 
     @patch.object(rpc, 'get_notifier')
     def test_verify_optional_start_args(self, notifier):
-        self.test_notification.notify_start(provider='test', parameters="test", id='111', provisioning_status='active', name='aaa')
+        self.test_notification.notify_start(provider='test', parameters="test", id='111', provisioning_status='active')
         self.assertTrue(notifier().info.called)
         a, _ = notifier().info.call_args
         payload = a[2]
@@ -155,7 +154,7 @@ class TestOctaviaNotification(base.TestCase):
 
     @patch.object(rpc, 'get_notifier')
     def test_verify_required_end_args(self, notifier):
-        self.test_notification.notify_end(provider='test', id='111', provisioning_status='active', name='aaa')
+        self.test_notification.notify_end(provider='test', id='111', provisioning_status='active')
         self.assertTrue(notifier().info.called)
         a, _ = notifier().info.call_args
         payload = a[2]

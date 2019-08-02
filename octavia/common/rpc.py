@@ -14,6 +14,7 @@ from oslo_config import cfg
 from oslo_log import log as logging
 import oslo_messaging as messaging
 from oslo_messaging.rpc import dispatcher
+from octavia.common import utils
 
 LOG = logging.getLogger(__name__)
 
@@ -27,8 +28,11 @@ def init(conf):
     global TRANSPORT, NOTIFICATION_TRANSPORT, NOTIFIER
     TRANSPORT = create_transport(get_transport_url())
     NOTIFICATION_TRANSPORT = messaging.get_notification_transport(conf)
-    NOTIFIER = messaging.Notifier(
-            NOTIFICATION_TRANSPORT, driver='messaging')
+    if utils.notification_enabled(conf):
+        NOTIFIER = messaging.Notifier(
+                NOTIFICATION_TRANSPORT, driver=utils.get_notification_driver(conf))
+    else: 
+        NOTIFIER = utils.DO_NOTHING
 
 def cleanup():
     global TRANSPORT, NOTIFICATION_TRANSPORT, NOTIFIER

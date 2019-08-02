@@ -101,6 +101,32 @@ def get_six_compatible_server_certs_key_passphrase():
     return base64.urlsafe_b64encode(key)
 
 
+def notification_enabled(conf):
+    notification_driver = set(conf.oslo_messaging_notifications.driver)
+    return notification_driver and notification_driver != {'noop'}
+
+
+def get_notification_driver(conf):
+    notification_driver = list(set(conf.oslo_messaging_notifications.driver))
+    if len(notification_driver) > 0:
+        return notification_driver[0]
+    else: 
+        return None
+
+
+class DoNothing(str):
+    """Class that literally does nothing.
+
+    We inherit from str in case it's called with json.dumps.
+    """
+    def __call__(self, *args, **kwargs):
+        return self
+
+    def __getattr__(self, name):
+        return self
+
+DO_NOTHING = DoNothing()
+
 class exception_logger(object):
     """Wrap a function and log raised exception
 
